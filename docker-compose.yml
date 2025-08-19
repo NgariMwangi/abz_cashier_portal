@@ -1,0 +1,9 @@
+version: '3'
+services:
+    web:
+        build: .
+        # env_file: .env
+        container_name: abz-cashier-portal
+        restart: always
+        ports:
+            - 5036:80

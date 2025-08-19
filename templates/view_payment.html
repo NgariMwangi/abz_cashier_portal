@@ -1,0 +1,343 @@
+{% extends "base.html" %}
+
+{% block title %}Payment #{{ payment.id }} - ABZ Cashier Portal{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1 class="mb-2">
+                    <i class="fas fa-credit-card me-2"></i>Payment #{{ payment.id }}
+                </h1>
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                        <li class="breadcrumb-item"><a href="{{ url_for('payments') }}">Payments</a></li>
+                        <li class="breadcrumb-item active">Payment #{{ payment.id }}</li>
+                    </ol>
+                </nav>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('payments') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Payments
+                </a>
+                {% if payment.payment_status == 'pending' %}
+                <button type="button" class="btn btn-success" onclick="processPayment('complete')">
+                    <i class="fas fa-check me-2"></i>Mark Complete
+                </button>
+                <button type="button" class="btn btn-danger" onclick="processPayment('fail')">
+                    <i class="fas fa-times me-2"></i>Mark Failed
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Payment Details -->
+    <div class="col-md-8">
+        <div class="card shadow mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Payment Details
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td class="fw-bold">Payment ID:</td>
+                                <td>#{{ payment.id }}</td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Order ID:</td>
+                                <td>
+                                    <a href="{{ url_for('view_order', order_id=payment.orderid) }}" class="text-decoration-none">
+                                        <span class="badge bg-primary">Order #{{ payment.orderid }}</span>
+                                    </a>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Amount:</td>
+                                <td class="h5 text-primary mb-0">KSH {{ payment.amount }}</td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Status:</td>
+                                <td>
+                                    {% if payment.payment_status == 'completed' %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check me-1"></i>Completed
+                                        </span>
+                                    {% elif payment.payment_status == 'pending' %}
+                                        <span class="badge bg-warning">
+                                            <i class="fas fa-clock me-1"></i>Pending
+                                        </span>
+                                    {% elif payment.payment_status == 'failed' %}
+                                        <span class="badge bg-danger">
+                                            <i class="fas fa-times me-1"></i>Failed
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ payment.payment_status|title }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td class="fw-bold">Method:</td>
+                                <td>
+                                    {% if payment.payment_method == 'cash' %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-money-bill me-1"></i>Cash
+                                        </span>
+                                    {% elif payment.payment_method == 'card' %}
+                                        <span class="badge bg-primary">
+                                            <i class="fas fa-credit-card me-1"></i>Card
+                                        </span>
+                                    {% elif payment.payment_method == 'mobile_money' %}
+                                        <span class="badge bg-warning">
+                                            <i class="fas fa-mobile-alt me-1"></i>Mobile Money
+                                        </span>
+                                    {% elif payment.payment_method == 'bank_transfer' %}
+                                        <span class="badge bg-info">
+                                            <i class="fas fa-university me-1"></i>Bank Transfer
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ payment.payment_method|title }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Created:</td>
+                                <td>{{ payment.created_at.strftime('%B %d, %Y at %I:%M %p') }}</td>
+                            </tr>
+                            {% if payment.payment_date %}
+                            <tr>
+                                <td class="fw-bold">Processed:</td>
+                                <td>{{ payment.payment_date.strftime('%B %d, %Y at %I:%M %p') }}</td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <td class="fw-bold">Reference:</td>
+                                <td>{{ payment.reference_number if payment.reference_number else 'N/A' }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                {% if payment.notes %}
+                <hr>
+                <div class="row">
+                    <div class="col-12">
+                        <h6 class="fw-bold">Notes:</h6>
+                        <p class="text-muted mb-0">{{ payment.notes }}</p>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Order Information -->
+        <div class="card shadow mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-shopping-cart me-2"></i>Related Order Information
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if payment.order %}
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td class="fw-bold">Order ID:</td>
+                                <td>#{{ payment.order.id }}</td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Order Type:</td>
+                                <td>
+                                    <span class="badge bg-info">{{ payment.order.ordertype.name if payment.order.ordertype else 'N/A' }}</span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Branch:</td>
+                                <td>{{ payment.order.branch.name if payment.order.branch else 'N/A' }}</td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Order Status:</td>
+                                <td>
+                                    {% if payment.order.approvalstatus %}
+                                        <span class="badge bg-success">Approved</span>
+                                    {% else %}
+                                        <span class="badge bg-warning">Pending</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-borderless">
+                            <tr>
+                                <td class="fw-bold">Order Total:</td>
+                                <td class="h6 text-primary mb-0">KSH {{ payment.order.total_amount|default('0.00') }}</td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Order Date:</td>
+                                <td>{{ payment.order.created_at.strftime('%B %d, %Y') }}</td>
+                            </tr>
+                            <tr>
+                                <td class="fw-bold">Payment Status:</td>
+                                <td>
+                                    {% if payment.order.payment_status == 'paid' %}
+                                        <span class="badge bg-success">Paid</span>
+                                    {% elif payment.order.payment_status == 'pending' %}
+                                        <span class="badge bg-warning">Pending</span>
+                                    {% elif payment.order.payment_status == 'failed' %}
+                                        <span class="badge bg-danger">Failed</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ payment.order.payment_status|title }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                {% else %}
+                <div class="text-center py-3">
+                    <i class="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
+                    <p class="text-muted mb-0">Order information not available</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Customer & Actions -->
+    <div class="col-md-4">
+        <!-- Customer Information -->
+        <div class="card shadow mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-user me-2"></i>Customer Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-3">
+                    <div class="avatar-lg bg-primary rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3">
+                        <span class="text-white fw-bold fs-1">{{ payment.user.firstname[0] }}{{ payment.user.lastname[0] }}</span>
+                    </div>
+                    <h5 class="mb-1">{{ payment.user.firstname }} {{ payment.user.lastname }}</h5>
+                    <p class="text-muted mb-2">{{ payment.user.email }}</p>
+                    <span class="badge bg-info">{{ payment.user.role.title() }}</span>
+                </div>
+                <hr>
+                <div class="row text-center">
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <small class="text-muted">Member Since</small>
+                            <div class="fw-bold">{{ payment.user.created_at.strftime('%b %Y') if payment.user.created_at else 'N/A' }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <small class="text-muted">Account ID</small>
+                            <div class="fw-bold">#{{ payment.user.id }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payment Processing -->
+        {% if payment.payment_status == 'pending' %}
+        <div class="card shadow mb-4">
+            <div class="card-header bg-warning text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-clock me-2"></i>Payment Pending
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">This payment is awaiting processing. Please verify the payment and update the status.</p>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-success" onclick="processPayment('complete')">
+                        <i class="fas fa-check me-2"></i>Mark as Completed
+                    </button>
+                    <button type="button" class="btn btn-danger" onclick="processPayment('fail')">
+                        <i class="fas fa-times me-2"></i>Mark as Failed
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% elif payment.payment_status == 'completed' %}
+        <div class="card shadow mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-check me-2"></i>Payment Completed
+                </h5>
+            </div>
+            <div class="card-body text-center">
+                <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                <p class="text-success mb-0">This payment has been successfully processed.</p>
+                <small class="text-muted">Completed on {{ payment.payment_date.strftime('%B %d, %Y at %I:%M %p') if payment.payment_date else 'N/A' }}</small>
+            </div>
+        </div>
+        {% elif payment.payment_status == 'failed' %}
+        <div class="card shadow mb-4">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-times me-2"></i>Payment Failed
+                </h5>
+            </div>
+            <div class="card-body text-center">
+                <i class="fas fa-exclamation-triangle fa-3x text-danger mb-3"></i>
+                <p class="text-danger mb-0">This payment has been marked as failed.</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Quick Actions -->
+        <div class="card shadow">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-bolt me-2"></i>Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('view_order', order_id=payment.orderid) }}" class="btn btn-outline-primary">
+                        <i class="fas fa-eye me-2"></i>View Order
+                    </a>
+                    <a href="#" class="btn btn-outline-info">
+                        <i class="fas fa-print me-2"></i>Print Receipt
+                    </a>
+                    <a href="#" class="btn btn-outline-secondary">
+                        <i class="fas fa-envelope me-2"></i>Send Receipt
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Processing Form (Hidden) -->
+<form id="processingForm" method="POST" action="{{ url_for('process_payment', payment_id=payment.id) }}" style="display: none;">
+    <input type="hidden" id="actionInput" name="action" value="">
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function processPayment(action) {
+    const actionText = action === 'complete' ? 'complete' : 'mark as failed';
+    if (confirm(`Are you sure you want to ${actionText} Payment #{{ payment.id }}?`)) {
+        document.getElementById('actionInput').value = action;
+        document.getElementById('processingForm').submit();
+    }
+}
+</script>
+{% endblock %}

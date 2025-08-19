@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+
+{% block title %}Orders - ABZ Cashier Portal{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="mb-0">
+                <i class="fas fa-shopping-cart me-2"></i>Orders Management
+            </h1>
+            <div class="d-flex gap-2">
+                <a href="#" class="btn btn-success">
+                    <i class="fas fa-plus me-2"></i>New Order
+                </a>
+                <a href="{{ url_for('payments') }}" class="btn btn-primary">
+                    <i class="fas fa-credit-card me-2"></i>View Payments
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="GET" class="row g-3">
+                    <div class="col-md-3">
+                        <label for="status" class="form-label">Status Filter</label>
+                        <select class="form-select" id="status" name="status">
+                            <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Orders</option>
+                            <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending Approval</option>
+                            <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="date_from" class="form-label">Date From</label>
+                        <input type="date" class="form-control" id="date_from" name="date_from">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="date_to" class="form-label">Date To</label>
+                        <input type="date" class="form-control" id="date_to" name="date_to">
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary me-2">
+                            <i class="fas fa-filter me-1"></i>Filter
+                        </button>
+                        <a href="{{ url_for('orders') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-times me-1"></i>Clear
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Orders Table -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Orders List
+                    <span class="badge bg-secondary ms-2">{{ orders.total }} total</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if orders.items %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Customer</th>
+                                <th>Order Type</th>
+                                <th>Branch</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Payment Status</th>
+                                <th>Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for order in orders.items %}
+                            <tr>
+                                <td>
+                                    <strong>#{{ order.id }}</strong>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar-sm bg-primary rounded-circle d-flex align-items-center justify-content-center me-2">
+                                            <span class="text-white fw-bold">{{ order.user.firstname[0] }}{{ order.user.lastname[0] }}</span>
+                                        </div>
+                                        <div>
+                                            <div class="fw-bold">{{ order.user.firstname }} {{ order.user.lastname }}</div>
+                                            <small class="text-muted">{{ order.user.email }}</small>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">{{ order.ordertype.name if order.ordertype else 'N/A' }}</span>
+                                </td>
+                                <td>
+                                    <span class="text-muted">{{ order.branch.name if order.branch else 'N/A' }}</span>
+                                </td>
+                                <td>
+                                    <strong class="text-primary">KSH {{ order.total_amount|default('0.00') }}</strong>
+                                </td>
+                                <td>
+                                    {% if order.approvalstatus %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check me-1"></i>Approved
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-warning">
+                                            <i class="fas fa-clock me-1"></i>Pending
+                                        </span>
+                                    {% endif %}
+                                    
+                                </td>
+                                <td>
+                                    {% if order.total_amount and order.total_amount > 0 %}
+                                        {% if order.payment_status == 'Fully Paid' %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check me-1"></i>Fully Paid
+                                            </span>
+                                        {% elif order.payment_status == 'Partially Paid' %}
+                                            <span class="badge bg-warning">
+                                                <i class="fas fa-clock me-1"></i>Partially Paid
+                                            </span>
+                                        {% elif order.payment_status == 'Unpaid' %}
+                                            <span class="badge bg-secondary">
+                                                <i class="fas fa-times me-1"></i>Unpaid
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">
+                                                <i class="fas fa-question me-1"></i>{{ order.payment_status }}
+                                            </span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="badge bg-secondary">N/A</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="text-muted">
+                                        <div>{{ order.created_at.strftime('%m/%d/%Y') }}</div>
+                                        <small>{{ order.created_at.strftime('%H:%M') }}</small>
+                                    </div>
+                                </td>
+                                <td>
+                                                                               <div class="btn-group" role="group">
+                                               <a href="{{ url_for('view_order', order_id=order.id) }}" class="btn btn-sm btn-outline-primary">
+                                                   <i class="fas fa-eye me-1"></i>View
+                                               </a>
+                                               {% if not order.approvalstatus %}
+                                               <button type="button" class="btn btn-sm btn-outline-success" 
+                                                       onclick="approveOrder({{ order.id }})">
+                                                   <i class="fas fa-check me-1"></i>Approve
+                                               </button>
+                                               {% endif %}
+                                               <a href="{{ url_for('process_payment_from_order', order_id=order.id) }}" class="btn btn-sm btn-outline-primary">
+                                                   <i class="fas fa-credit-card me-1"></i>Payment
+                                               </a>
+                                           </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                {% if orders.pages > 1 %}
+                <nav aria-label="Orders pagination" class="mt-4">
+                    <ul class="pagination justify-content-center">
+                        {% if orders.has_prev %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('orders', page=orders.prev_num, status=status_filter) }}">
+                                <i class="fas fa-chevron-left"></i> Previous
+                            </a>
+                        </li>
+                        {% endif %}
+
+                        {% for page_num in orders.iter_pages() %}
+                            {% if page_num %}
+                                {% if page_num != orders.page %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('orders', page=page_num, status=status_filter) }}">{{ page_num }}</a>
+                                </li>
+                                {% else %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ page_num }}</span>
+                                </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">...</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+
+                        {% if orders.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('orders', page=orders.next_num, status=status_filter) }}">
+                                Next <i class="fas fa-chevron-right"></i>
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+                {% endif %}
+
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
+                    <h5 class="text-muted">No orders found</h5>
+                    <p class="text-muted">There are no orders matching your current filters.</p>
+                    <a href="{{ url_for('orders') }}" class="btn btn-primary">
+                        <i class="fas fa-refresh me-2"></i>Clear Filters
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function approveOrder(orderId) {
+    if (confirm('Are you sure you want to approve this order?')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/order/${orderId}/approve`;
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+</script>
+{% endblock %}

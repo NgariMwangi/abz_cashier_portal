@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+
+{% block title %}Sales Report - ABZ Cashier Portal{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1 class="mb-2">
+                    <i class="fas fa-chart-bar me-2"></i>Sales Report
+                </h1>
+                <p class="text-muted mb-0">Track revenue, payments, and sales performance</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                </a>
+                <button type="button" class="btn btn-success" onclick="exportReport()">
+                    <i class="fas fa-download me-2"></i>Export Report
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Date Filter -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="GET" class="row g-3">
+                    <div class="col-md-3">
+                        <label for="start_date" class="form-label">Start Date</label>
+                        <input type="date" class="form-control" id="start_date" name="start_date" value="{{ start_date }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="end_date" class="form-label">End Date</label>
+                        <input type="date" class="form-control" id="end_date" name="end_date" value="{{ end_date }}">
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary me-2">
+                            <i class="fas fa-filter me-1"></i>Apply Filter
+                        </button>
+                        <a href="{{ url_for('sales_report') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-times me-1"></i>Reset
+                        </a>
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <div class="btn-group w-100" role="group">
+                            <button type="button" class="btn btn-outline-primary" onclick="setDateRange(7)">7 Days</button>
+                            <button type="button" class="btn btn-outline-primary" onclick="setDateRange(30)">30 Days</button>
+                            <button type="button" class="btn btn-outline-primary" onclick="setDateRange(90)">90 Days</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card border-left-primary shadow h-100">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                            Total Revenue
+                        </div>
+                        <div class="h3 mb-0 font-weight-bold text-primary">
+                            KSH {{ total_revenue|default(0) }}
+                        </div>
+                        <div class="text-xs text-muted">{{ start_date }} to {{ end_date }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-dollar-sign fa-2x text-primary"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card border-left-success shadow h-100">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                            Total Payments
+                        </div>
+                        <div class="h3 mb-0 font-weight-bold text-success">
+                            {{ total_payments|default(0) }}
+                        </div>
+                        <div class="text-xs text-muted">Completed payments</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-credit-card fa-2x text-success"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card border-left-info shadow h-100">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                            Average Revenue
+                        </div>
+                        <div class="h3 mb-0 font-weight-bold text-info">
+                            KSH {{ (total_revenue / total_payments)|round(2) if total_payments > 0 else 0 }}
+                        </div>
+                        <div class="text-xs text-muted">Per payment</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-chart-line fa-2x text-info"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sales Chart -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-area me-2"></i>Revenue Trend
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if sales_data %}
+                <canvas id="salesChart" width="400" height="100"></canvas>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-chart-line fa-4x text-muted mb-3"></i>
+                    <h5 class="text-muted">No sales data available</h5>
+                    <p class="text-muted">Select a different date range to view sales data.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sales Data Table -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-table me-2"></i>Daily Sales Breakdown
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if sales_data %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Payments Count</th>
+                                <th>Revenue</th>
+                                <th>Average per Payment</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in sales_data %}
+                            <tr>
+                                <td>
+                                    <strong>{{ row.date.strftime('%B %d, %Y') }}</strong>
+                                    <br>
+                                    <small class="text-muted">{{ row.date.strftime('%A') }}</small>
+                                </td>
+                                <td>
+                                    <span class="badge bg-primary">{{ row.payment_count }}</span>
+                                </td>
+                                <td>
+                                    <strong class="text-success">KSH {{ row.total_amount|default(0) }}</strong>
+                                </td>
+                                <td>
+                                    <span class="text-muted">KSH {{ (row.total_amount / row.payment_count)|round(2) if row.payment_count > 0 else 0 }}</span>
+                                </td>
+                                <td>
+                                    <a href="#" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye me-1"></i>View Details
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <td class="fw-bold">TOTAL</td>
+                                <td><span class="badge bg-primary">{{ total_payments }}</span></td>
+                                <td><strong class="text-success">KSH {{ total_revenue }}</strong></td>
+                                <td><span class="text-muted">KSH {{ (total_revenue / total_payments)|round(2) if total_payments > 0 else 0 }}</span></td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-table fa-4x text-muted mb-3"></i>
+                    <h5 class="text-muted">No sales data available</h5>
+                    <p class="text-muted">Select a different date range to view sales data.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Date range shortcuts
+function setDateRange(days) {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - days);
+    
+    document.getElementById('start_date').value = startDate.toISOString().split('T')[0];
+    document.getElementById('end_date').value = endDate.toISOString().split('T')[0];
+}
+
+// Export functionality
+function exportReport() {
+    // This would typically generate a CSV or PDF report
+    alert('Export functionality would be implemented here');
+}
+
+// Sales Chart
+{% if sales_data %}
+const ctx = document.getElementById('salesChart').getContext('2d');
+const salesChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: [{% for row in sales_data %}'{{ row.date.strftime('%m/%d') }}'{% if not loop.last %}, {% endif %}{% endfor %}],
+        datasets: [{
+            label: 'Daily Revenue (KSH)',
+            data: [{% for row in sales_data %}{{ row.total_amount|default(0) }}{% if not loop.last %}, {% endif %}{% endfor %}],
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            tension: 0.1,
+            fill: true
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            title: {
+                display: true,
+                text: 'Revenue Trend ({{ start_date }} to {{ end_date }})'
+            },
+            legend: {
+                display: true,
+                position: 'top'
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    callback: function(value) {
+                        return 'KSH ' + value.toLocaleString();
+                    }
+                }
+            }
+        }
+    }
+});
+{% endif %}
+</script>
+{% endblock %}
+
+{% block styles %}
+<style>
+.border-left-primary {
+    border-left: 4px solid #007bff !important;
+}
+
+.border-left-success {
+    border-left: 4px solid #28a745 !important;
+}
+
+.border-left-info {
+    border-left: 4px solid #17a2b8 !important;
+}
+</style>
+{% endblock %}

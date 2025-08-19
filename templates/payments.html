@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block title %}Payments - ABZ Cashier Portal{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="mb-0">
+                <i class="fas fa-credit-card me-2"></i>Payments Management
+            </h1>
+            <div class="d-flex gap-2">
+                <a href="#" class="btn btn-success">
+                    <i class="fas fa-plus me-2"></i>New Payment
+                </a>
+                <a href="{{ url_for('orders') }}" class="btn btn-primary">
+                    <i class="fas fa-shopping-cart me-2"></i>Process Order Payment
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="GET" class="row g-3">
+                    <div class="col-md-3">
+                        <label for="status" class="form-label">Status Filter</label>
+                        <select class="form-select" id="status" name="status">
+                            <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Payments</option>
+                            <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+                            <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="method" class="form-label">Payment Method</label>
+                        <select class="form-select" id="method" name="method">
+                            <option value="">All Methods</option>
+                            <option value="cash">Cash</option>
+                            <option value="card">Card</option>
+                            <option value="mobile_money">Mobile Money</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="date_from" class="form-label">Date From</label>
+                        <input type="date" class="form-control" id="date_from" name="date_from">
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary me-2">
+                            <i class="fas fa-filter me-1"></i>Filter
+                        </button>
+                        <a href="{{ url_for('payments') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-times me-1"></i>Clear
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payments Table -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Payments List
+                    <span class="badge bg-secondary ms-2">{{ payments.total }} total</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if payments.items %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Payment ID</th>
+                                <th>Order</th>
+                                <th>Customer</th>
+                                <th>Amount</th>
+                                <th>Method</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for payment in payments.items %}
+                            <tr>
+                                <td>
+                                    <strong>#{{ payment.id }}</strong>
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('view_order', order_id=payment.orderid) }}" class="text-decoration-none">
+                                        <span class="badge bg-primary">Order #{{ payment.orderid }}</span>
+                                    </a>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar-sm bg-info rounded-circle d-flex align-items-center justify-content-center me-2">
+                                            <span class="text-white fw-bold">{{ payment.user.firstname[0] }}{{ payment.user.lastname[0] }}</span>
+                                        </div>
+                                        <div>
+                                            <div class="fw-bold">{{ payment.user.firstname }} {{ payment.user.lastname }}</div>
+                                            <small class="text-muted">{{ payment.user.email }}</small>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <strong class="text-primary">KSH {{ payment.amount }}</strong>
+                                </td>
+                                <td>
+                                    {% if payment.payment_method == 'cash' %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-money-bill me-1"></i>Cash
+                                        </span>
+                                    {% elif payment.payment_method == 'card' %}
+                                        <span class="badge bg-primary">
+                                            <i class="fas fa-credit-card me-1"></i>Card
+                                        </span>
+                                    {% elif payment.payment_method == 'mobile_money' %}
+                                        <span class="badge bg-warning">
+                                            <i class="fas fa-mobile-alt me-1"></i>Mobile Money
+                                        </span>
+                                    {% elif payment.payment_method == 'bank_transfer' %}
+                                        <span class="badge bg-info">
+                                            <i class="fas fa-university me-1"></i>Bank Transfer
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ payment.payment_method|title }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if payment.payment_status == 'completed' %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check me-1"></i>Completed
+                                        </span>
+                                    {% elif payment.payment_status == 'pending' %}
+                                        <span class="badge bg-warning">
+                                            <i class="fas fa-clock me-1"></i>Pending
+                                        </span>
+                                    {% elif payment.payment_status == 'failed' %}
+                                        <span class="badge bg-danger">
+                                            <i class="fas fa-times me-1"></i>Failed
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ payment.payment_status|title }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="text-muted">
+                                        <div>{{ payment.created_at.strftime('%m/%d/%Y') }}</div>
+                                        <small>{{ payment.created_at.strftime('%H:%M') }}</small>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="btn-group" role="group">
+                                        <a href="{{ url_for('view_payment', payment_id=payment.id) }}" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-eye me-1"></i>View
+                                        </a>
+                                        {% if payment.payment_status == 'pending' %}
+                                        <button type="button" class="btn btn-sm btn-outline-success" 
+                                                onclick="processPayment({{ payment.id }}, 'complete')">
+                                            <i class="fas fa-check me-1"></i>Complete
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" 
+                                                onclick="processPayment({{ payment.id }}, 'fail')">
+                                            <i class="fas fa-times me-1"></i>Fail
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                {% if payments.pages > 1 %}
+                <nav aria-label="Payments pagination" class="mt-4">
+                    <ul class="pagination justify-content-center">
+                        {% if payments.has_prev %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('payments', page=payments.prev_num, status=status_filter) }}">
+                                <i class="fas fa-chevron-left"></i> Previous
+                            </a>
+                        </li>
+                        {% endif %}
+
+                        {% for page_num in payments.iter_pages() %}
+                            {% if page_num %}
+                                {% if page_num != payments.page %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('payments', page=page_num, status=status_filter) }}">{{ page_num }}</a>
+                                </li>
+                                {% else %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ page_num }}</span>
+                                </li>
+                                {% endif %}
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">...</span>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+
+                        {% if payments.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('payments', page=payments.next_num, status=status_filter) }}">
+                                Next <i class="fas fa-chevron-right"></i>
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+                {% endif %}
+
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-credit-card fa-4x text-muted mb-3"></i>
+                    <h5 class="text-muted">No payments found</h5>
+                    <p class="text-muted">There are no payments matching your current filters.</p>
+                    <a href="{{ url_for('payments') }}" class="btn btn-primary">
+                        <i class="fas fa-refresh me-2"></i>Clear Filters
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function processPayment(paymentId, action) {
+    const actionText = action === 'complete' ? 'complete' : 'mark as failed';
+    if (confirm(`Are you sure you want to ${actionText} this payment?`)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/payment/${paymentId}/process`;
+        
+        const actionInput = document.createElement('input');
+        actionInput.type = 'hidden';
+        actionInput.name = 'action';
+        actionInput.value = action;
+        
+        form.appendChild(actionInput);
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+</script>
+{% endblock %}

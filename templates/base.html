@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ABZ Cashier Portal{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .navbar-brand {
+            font-weight: bold;
+            color: #2c3e50 !important;
+        }
+        .flash-messages {
+            margin-top: 20px;
+        }
+        .alert {
+            transition: opacity 0.5s ease-in-out;
+        }
+        .alert.fade-out {
+            opacity: 0;
+        }
+        .alert-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.8);
+            animation: progress 5s linear;
+            border-radius: 0 0 0.375rem 0.375rem;
+        }
+        .alert-danger .alert-progress {
+            background: rgba(255, 255, 255, 0.9);
+        }
+        .alert-warning .alert-progress {
+            background: rgba(0, 0, 0, 0.3);
+        }
+        .alert-info .alert-progress {
+            background: rgba(255, 255, 255, 0.9);
+        }
+        @keyframes progress {
+            from { width: 100%; }
+            to { width: 0%; }
+        }
+        .main-content {
+            min-height: calc(100vh - 200px);
+            padding: 20px 0;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px 0;
+            margin-top: 50px;
+        }
+        .avatar-sm {
+            width: 32px;
+            height: 32px;
+            font-size: 14px;
+        }
+        .avatar-lg {
+            width: 80px;
+            height: 80px;
+            font-size: 32px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="fas fa-cash-register me-2"></i>ABZ Cashier Portal
+            </a>
+            
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    {% if current_user.is_authenticated %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('dashboard') }}">
+                                <i class="fas fa-tachometer-alt me-1"></i>Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('orders') }}">
+                                <i class="fas fa-shopping-cart me-1"></i>Orders
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('payments') }}">
+                                <i class="fas fa-credit-card me-1"></i>Payments
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('sales_report') }}">
+                                <i class="fas fa-chart-bar me-1"></i>Sales Report
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav">
+                    {% if current_user.is_authenticated %}
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-user me-1"></i>{{ current_user.firstname }}
+                            </a>
+                            <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
+                                <li><a class="dropdown-item" href="{{ url_for('profile') }}">
+                                    <i class="fas fa-user-circle me-2"></i>Profile
+                                </a></li>
+
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="{{ url_for('logout') }}">
+                                    <i class="fas fa-sign-out-alt me-2"></i>Logout
+                                </a></li>
+                            </ul>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('login') }}">
+                                <i class="fas fa-sign-in-alt me-1"></i>Login
+                            </a>
+                        </li>
+
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Flash Messages -->
+    <div class="container flash-messages">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show position-relative" role="alert" aria-live="polite">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        <div class="alert-progress" aria-hidden="true"></div>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <!-- Main Content -->
+    <div class="container main-content">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container text-center">
+            <p class="text-muted mb-0">&copy; 2025 ABZ Cashier Portal. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Auto-hide flash messages after 5 seconds -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get all flash messages
+            const flashMessages = document.querySelectorAll('.alert');
+            
+            // Only proceed if there are flash messages
+            if (flashMessages.length > 0) {
+                // Auto-hide each message after 5 seconds
+                flashMessages.forEach(function(message) {
+                    let hideTimeout;
+                    let isPaused = false;
+                    
+                    // Function to start auto-hide
+                    function startAutoHide() {
+                        hideTimeout = setTimeout(function() {
+                            if (!isPaused) {
+                                // Add fade-out class for smooth transition
+                                message.classList.add('fade-out');
+                                
+                                // Remove the message from DOM after transition
+                                setTimeout(function() {
+                                    if (message.parentNode) {
+                                        message.parentNode.removeChild(message);
+                                    }
+                                }, 500); // Wait for CSS transition to complete
+                            }
+                        }, 5000); // 5000 milliseconds = 5 seconds
+                    }
+                    
+                    // Pause auto-hide on hover
+                    message.addEventListener('mouseenter', function() {
+                        isPaused = true;
+                        if (hideTimeout) {
+                            clearTimeout(hideTimeout);
+                        }
+                    });
+                    
+                    // Resume auto-hide when mouse leaves
+                    message.addEventListener('mouseleave', function() {
+                        isPaused = false;
+                        startAutoHide();
+                    });
+                    
+                    // Start the auto-hide timer
+                    startAutoHide();
+                });
+            }
+        });
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>
