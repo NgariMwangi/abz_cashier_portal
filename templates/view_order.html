@@ -153,6 +153,7 @@
                             <tr>
                                 <th>Product</th>
                                 <th>Category</th>
+                                <th>Sub-Category</th>
                                 <th>Quantity</th>
                                 <th>Unit Price</th>
                                 <th>Total</th>
@@ -175,6 +176,9 @@
                                 <td>
                                     <span class="badge bg-secondary">{{ item.product.sub_category.category.name if item.product and item.product.sub_category and item.product.sub_category.category else 'N/A' }}</span>
                                 </td>
+                                <td>
+                                    <span class="badge bg-info">{{ item.product.sub_category.name if item.product and item.product.sub_category else 'N/A' }}</span>
+                                </td>
                                 <td>{{ item.quantity }}</td>
                                 <td>KSH {{ item.final_price|default(item.original_price)|default('0.00') }}</td>
                                 <td class="fw-bold">KSH {{ (item.quantity * (item.final_price or item.original_price or 0))|default('0.00') }}</td>
@@ -183,11 +187,11 @@
                         </tbody>
                         <tfoot class="table-light">
                             <tr>
-                                <td colspan="4" class="text-end fw-bold">Subtotal:</td>
+                                <td colspan="5" class="text-end fw-bold">Subtotal:</td>
                                 <td class="fw-bold">KSH {{ total_amount|default('0.00') }}</td>
                             </tr>
                             <tr>
-                                <td colspan="4" class="text-end fw-bold">Total:</td>
+                                <td colspan="5" class="text-end fw-bold">Total:</td>
                                 <td class="h5 text-primary mb-0 fw-bold">KSH {{ total_amount|default('0.00') }}</td>
                             </tr>
                         </tfoot>
@@ -301,9 +305,23 @@
                     <a href="{{ url_for('process_payment_from_order', order_id=order.id) }}" class="btn btn-primary">
                         <i class="fas fa-credit-card me-2"></i>Process Payment
                     </a>
-                    <a href="#" class="btn btn-outline-primary">
-                        <i class="fas fa-print me-2"></i>Print Receipt
-                    </a>
+                    {% if order.payments %}
+                        {% for payment in order.payments %}
+                                             {% if payment.payment_status == 'completed' %}
+                 <div class="btn-group" role="group">
+                     <a href="{{ url_for('receipt_preview', payment_id=payment.id) }}" class="btn btn-outline-primary">
+                         <i class="fas fa-eye me-2"></i>Preview #{{ payment.id }}
+                     </a>
+                     <a href="{{ url_for('generate_receipt', payment_id=payment.id) }}" class="btn btn-outline-info" target="_blank">
+                         <i class="fas fa-file-pdf me-2"></i>PDF
+                     </a>
+                     <a href="{{ url_for('generate_receipt', payment_id=payment.id, action='download') }}" class="btn btn-outline-success">
+                         <i class="fas fa-download me-2"></i>Download
+                     </a>
+                 </div>
+                 {% endif %}
+                        {% endfor %}
+                    {% endif %}
                     <a href="#" class="btn btn-outline-info">
                         <i class="fas fa-envelope me-2"></i>Send Invoice
                     </a>

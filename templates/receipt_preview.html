@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Receipt Preview - ABZ Cashier Portal{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1 class="mb-2">
+                    <i class="fas fa-file-pdf me-2"></i>Receipt Preview
+                </h1>
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                        <li class="breadcrumb-item"><a href="{{ url_for('payments') }}">Payments</a></li>
+                        <li class="breadcrumb-item active">Receipt Preview</li>
+                    </ol>
+                </nav>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('payments') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Payments
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <!-- Receipt Preview -->
+        <div class="card shadow">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-eye me-2"></i>Receipt Preview
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-4">
+                    <p class="text-muted">Receipt is displayed below. You can view it in the browser or download it.</p>
+                </div>
+                
+                <!-- Receipt Display Area -->
+                <div class="receipt-container border rounded p-3 bg-light">
+                    <div class="text-center mb-3">
+                        <h4 class="mb-1">ABZ HARDWARE</h4>
+                        <h6 class="text-muted mb-2">Payment Receipt</h6>
+                        <small class="text-muted">Receipt #{{ payment.id }}</small>
+                    </div>
+                    
+                    <hr>
+                    
+                    <div class="row">
+                        <div class="col-6">
+                            <strong>Date:</strong><br>
+                            <span class="text-muted">{{ payment.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        </div>
+                        <div class="col-6">
+                            <strong>Payment ID:</strong><br>
+                            <span class="text-muted">#{{ payment.id }}</span>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <div class="mb-3">
+                        <strong>Payment Details:</strong><br>
+                        <span class="text-muted">Method: {{ payment.payment_method.title() if payment.payment_method else 'N/A' }}</span><br>
+                        <span class="text-muted">Amount: KSH {{ payment.amount }}</span>
+                        {% if payment.reference_number %}
+                        <br><span class="text-muted">Ref: {{ payment.reference_number }}</span>
+                        {% endif %}
+                    </div>
+                    
+                    {% if payment.order and payment.order.order_items %}
+                    <div class="mb-3">
+                        <strong>Order Items:</strong>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-borderless">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Product</th>
+                                        <th class="text-center">Qty</th>
+                                        <th class="text-end">Price</th>
+                                        <th class="text-end">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in payment.order.order_items %}
+                                    <tr>
+                                        <td>{{ item.product.name if item.product else 'N/A' }}</td>
+                                        <td class="text-center">{{ item.quantity }}</td>
+                                        <td class="text-end">KSH {{ item.final_price or item.original_price or 0 }}</td>
+                                        <td class="text-end">KSH {{ item.quantity * (item.final_price or item.original_price or 0) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="text-end">
+                            <strong>Total: KSH {{ payment.amount }}</strong>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <hr>
+                    
+                    <div class="text-center">
+                        <p class="mb-1">Thank you for your business!</p>
+                        <p class="mb-1"><strong>ABZ Hardware</strong></p>
+                        <p class="text-muted small">Quality Hardware Solutions</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <!-- Receipt Actions -->
+        <div class="card shadow">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-cogs me-2"></i>Receipt Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-3">
+                    <a href="{{ url_for('generate_receipt', payment_id=payment.id) }}" class="btn btn-info" target="_blank">
+                        <i class="fas fa-eye me-2"></i>View Full Receipt
+                    </a>
+                    
+                    <a href="{{ url_for('generate_receipt', payment_id=payment.id, action='download') }}" class="btn btn-success">
+                        <i class="fas fa-download me-2"></i>Download Receipt
+                    </a>
+                    
+                    <a href="{{ url_for('view_payment', payment_id=payment.id) }}" class="btn btn-outline-primary">
+                        <i class="fas fa-credit-card me-2"></i>View Payment Details
+                    </a>
+                    
+                    <a href="{{ url_for('view_order', order_id=payment.orderid) }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-shopping-cart me-2"></i>View Order Details
+                    </a>
+                </div>
+                
+                <hr>
+                
+                <div class="text-center">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Receipts are optimized for 80mm thermal printers
+                    </small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Receipt Information -->
+        <div class="card shadow mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Receipt Info
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <small class="text-muted">Receipt ID</small>
+                            <div class="fw-bold">#{{ payment.id }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <small class="text-muted">Amount</small>
+                            <div class="fw-bold text-primary">KSH {{ payment.amount }}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-3">
+                    <small class="text-muted">
+                        <strong>Generated:</strong> {{ payment.created_at.strftime('%B %d, %Y at %I:%M %p') }}
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+.receipt-container {
+    max-width: 400px;
+    margin: 0 auto;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+}
+
+.receipt-container .table {
+    font-size: 11px;
+}
+
+.receipt-container .table th,
+.receipt-container .table td {
+    padding: 2px 4px;
+    border: none;
+}
+</style>
+{% endblock %}

@@ -1,10 +1,11 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User, Branch, Product, Order, Payment, StockTransaction, Supplier, PurchaseOrder, PurchaseOrderItem, Quotation, QuotationItem
+from models import db, User, Branch, Product, Order, OrderItem, Payment, StockTransaction, Supplier, PurchaseOrder, PurchaseOrderItem, Quotation, QuotationItem, SubCategory
 from datetime import datetime
 import os
 from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 from functools import wraps
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'  # Change this to a secure secret key
@@ -262,7 +263,9 @@ def orders():
 def view_order(order_id):
     from sqlalchemy import func
     
-    order = Order.query.get_or_404(order_id)
+    order = Order.query.options(
+        db.joinedload(Order.order_items).joinedload(OrderItem.product).joinedload(Product.sub_category).joinedload(SubCategory.category)
+    ).get_or_404(order_id)
     
     # Calculate total amount from order items
     total_amount = 0
@@ -349,15 +352,124 @@ def view_order(order_id):
 @cashier_required
 def approve_order(order_id):
     order = Order.query.get_or_404(order_id)
-    order.approvalstatus = True
-    order.approved_at = datetime.now()
+    
+    # Check if order is already approved
+    if order.approvalstatus:
+        flash(f'Order #{order.id} is already approved.', 'warning')
+        return redirect(url_for('view_order', order_id=order_id))
+    
+    # Check if order has items
+    if not order.order_items:
+        flash('Cannot approve order with no items.', 'error')
+        return redirect(url_for('view_order', order_id=order_id))
+    
+    # Validate stock availability before approval
+    insufficient_stock_products = []
+    for item in order.order_items:
+        product = Product.query.get(item.productid)
+        if not product:
+            flash(f'Product not found for order item.', 'error')
+            return redirect(url_for('view_order', order_id=order_id))
+        
+        if product.stock is None or product.stock < item.quantity:
+            insufficient_stock_products.append({
+                'name': product.name,
+                'available': product.stock or 0,
+                'requested': item.quantity
+            })
+    
+    if insufficient_stock_products:
+        stock_error_msg = "Insufficient stock for: "
+        for product in insufficient_stock_products:
+            stock_error_msg += f"{product['name']} (Available: {product['available']}, Requested: {product['requested']}); "
+        flash(stock_error_msg, 'error')
+        return redirect(url_for('view_order', order_id=order_id))
     
     try:
+        # Approve the order
+        order.approvalstatus = True
+        order.approved_at = datetime.now()
+        
+        # Reduce stock quantities and create stock transactions
+        for item in order.order_items:
+            product = Product.query.get(item.productid)
+            previous_stock = product.stock or 0
+            new_stock = previous_stock - item.quantity
+            
+            # Update product stock
+            product.stock = new_stock
+            
+            # Create stock transaction record
+            stock_transaction = StockTransaction(
+                productid=item.productid,
+                userid=current_user.id,
+                transaction_type='remove',
+                quantity=item.quantity,
+                previous_stock=previous_stock,
+                new_stock=new_stock,
+                notes=f'Stock reduced due to order #{order.id} approval'
+            )
+            db.session.add(stock_transaction)
+        
         db.session.commit()
-        flash(f'Order #{order.id} has been approved successfully!', 'success')
+        flash(f'Order #{order.id} has been approved successfully! Stock quantities have been updated.', 'success')
+        
     except Exception as e:
         db.session.rollback()
-        flash('Failed to approve order. Please try again.', 'error')
+        flash(f'Failed to approve order: {str(e)}', 'error')
+        print(f"Error approving order {order_id}: {str(e)}")
+    
+    return redirect(url_for('view_order', order_id=order_id))
+
+@app.route('/order/<int:order_id>/cancel', methods=['POST'])
+@cashier_required
+def cancel_order(order_id):
+    order = Order.query.get_or_404(order_id)
+    
+    # Check if order is approved
+    if not order.approvalstatus:
+        flash(f'Order #{order.id} is not approved yet. Cannot cancel.', 'warning')
+        return redirect(url_for('view_order', order_id=order_id))
+    
+    # Check if order has items
+    if not order.order_items:
+        flash('Cannot cancel order with no items.', 'error')
+        return redirect(url_for('view_order', order_id=order_id))
+    
+    try:
+        # Cancel the order
+        order.approvalstatus = False
+        order.approved_at = None
+        
+        # Restore stock quantities and create stock transactions
+        for item in order.order_items:
+            product = Product.query.get(item.productid)
+            if product:
+                previous_stock = product.stock or 0
+                new_stock = previous_stock + item.quantity
+                
+                # Update product stock
+                product.stock = new_stock
+                
+                # Create stock transaction record for restoration
+                stock_transaction = StockTransaction(
+                    productid=item.productid,
+                    userid=current_user.id,
+                    transaction_type='add',
+                    quantity=item.quantity,
+                    previous_stock=previous_stock,
+                    new_stock=new_stock,
+                    notes=f'Stock restored due to order #{order.id} cancellation'
+                )
+                db.session.add(stock_transaction)
+        
+        db.session.commit()
+        flash(f'Order #{order.id} has been cancelled successfully! Stock quantities have been restored.', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Failed to cancel order: {str(e)}', 'error')
+        print(f"Error cancelling order {order_id}: {str(e)}")
     
     return redirect(url_for('view_order', order_id=order_id))
 
@@ -606,6 +718,271 @@ def sales_report():
                          end_date=end_date,
                          total_revenue=total_revenue,
                          total_payments=total_payments)
+
+# Stock Transactions Route
+@app.route('/stock-transactions')
+@cashier_required
+def stock_transactions():
+    page = request.args.get('page', 1, type=int)
+    transaction_type = request.args.get('type', 'all')
+    product_id = request.args.get('product_id', type=int)
+    
+    # Build query
+    query = StockTransaction.query
+    
+    if transaction_type != 'all':
+        query = query.filter_by(transaction_type=transaction_type)
+    
+    if product_id:
+        query = query.filter_by(productid=product_id)
+    
+    # Get stock transactions with pagination
+    transactions = query.order_by(StockTransaction.created_at.desc()).paginate(
+        page=page, per_page=20, error_out=False
+    )
+    
+    # Get all products for filter dropdown
+    products = Product.query.all()
+    
+    return render_template('stock_transactions.html', 
+                         transactions=transactions, 
+                         transaction_type=transaction_type,
+                         product_id=product_id,
+                         products=products)
+
+# Current Stock Levels Route
+@app.route('/stock-levels')
+@cashier_required
+def stock_levels():
+    page = request.args.get('page', 1, type=int)
+    branch_id = request.args.get('branch_id', type=int)
+    low_stock = request.args.get('low_stock', type=bool)
+    
+    # Build query
+    query = Product.query
+    
+    if branch_id:
+        query = query.filter_by(branchid=branch_id)
+    
+    if low_stock:
+        query = query.filter(Product.stock < 10)  # Show products with less than 10 in stock
+    
+    # Get products with pagination
+    products = query.order_by(Product.name).paginate(
+        page=page, per_page=20, error_out=False
+    )
+    
+    # Get all branches for filter dropdown
+    branches = Branch.query.all()
+    
+    return render_template('stock_levels.html', 
+                         products=products, 
+                         branch_id=branch_id,
+                         low_stock=low_stock,
+                         branches=branches)
+
+# Manual Stock Adjustment Route
+@app.route('/stock-adjustment', methods=['GET', 'POST'])
+@cashier_required
+def stock_adjustment():
+    if request.method == 'POST':
+        product_id = request.form.get('product_id', type=int)
+        adjustment_type = request.form.get('adjustment_type')  # 'add' or 'remove'
+        quantity = request.form.get('quantity', type=int)
+        notes = request.form.get('notes', '')
+        
+        if not product_id or not adjustment_type or not quantity or quantity <= 0:
+            flash('Please fill in all required fields with valid values.', 'error')
+            return redirect(url_for('stock_adjustment'))
+        
+        product = Product.query.get_or_404(product_id)
+        
+        try:
+            previous_stock = product.stock or 0
+            
+            if adjustment_type == 'add':
+                new_stock = previous_stock + quantity
+            else:  # remove
+                if previous_stock < quantity:
+                    flash(f'Cannot remove {quantity} items. Only {previous_stock} available in stock.', 'error')
+                    return redirect(url_for('stock_adjustment'))
+                new_stock = previous_stock - quantity
+            
+            # Update product stock
+            product.stock = new_stock
+            
+            # Create stock transaction record
+            stock_transaction = StockTransaction(
+                productid=product_id,
+                userid=current_user.id,
+                transaction_type=adjustment_type,
+                quantity=quantity,
+                previous_stock=previous_stock,
+                new_stock=new_stock,
+                notes=f'Manual stock adjustment: {notes}'
+            )
+            db.session.add(stock_transaction)
+            
+            db.session.commit()
+            
+            action = 'added to' if adjustment_type == 'add' else 'removed from'
+            flash(f'Successfully {action} stock for {product.name}. New stock level: {new_stock}', 'success')
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Failed to adjust stock: {str(e)}', 'error')
+            print(f"Error adjusting stock: {str(e)}")
+    
+    # Get all products for the form
+    products = Product.query.order_by(Product.name).all()
+    
+    return render_template('stock_adjustment.html', products=products)
+@app.route('/payment/<int:payment_id>/receipt/preview')
+@cashier_required
+def receipt_preview(payment_id):
+    """Show receipt preview page"""
+    payment = Payment.query.get_or_404(payment_id)
+    return render_template('receipt_preview.html', payment=payment)
+
+@app.route('/payment/<int:payment_id>/receipt')
+@app.route('/payment/<int:payment_id>/receipt/<action>')
+@cashier_required
+def generate_receipt(payment_id, action='view'):
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import (
+        BaseDocTemplate, PageTemplate, Frame,
+        Paragraph, Spacer, Table, TableStyle, Image
+    )
+    from io import BytesIO
+    import os
+
+    payment = Payment.query.get_or_404(payment_id)
+
+    def format_currency(amount):
+        return f"KSh{amount:,.2f}"
+
+    buffer = BytesIO()
+    page_width = 210  # safe width for 80mm printer (~74mm printable area)
+
+    doc = BaseDocTemplate(buffer, pagesize=(page_width, 600),
+                          leftMargin=10, rightMargin=10, topMargin=10, bottomMargin=10)
+    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id='normal')
+    template = PageTemplate(id='receipt', frames=[frame])
+    doc.addPageTemplates([template])
+
+    story = []
+
+    # Styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=12, alignment=1, spaceAfter=1)   # tighter
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Heading2'], fontSize=9, alignment=1, spaceAfter=4)  # reduced
+    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontSize=9, alignment=0, spaceAfter=4, fontName="Helvetica-Bold")
+    normal_style = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=8, alignment=0, spaceAfter=2)
+    center_style = ParagraphStyle('Center', parent=styles['Normal'], fontSize=8, alignment=1, spaceAfter=2)
+
+    # Logo (if available)
+    logo_path = os.path.join(app.static_folder, 'logo.png')
+    if os.path.exists(logo_path):
+        try:
+            logo = Image(logo_path, width=50, height=25)
+            logo.hAlign = 'CENTER'
+            story.append(logo)
+            story.append(Spacer(1, 4))
+        except:
+            pass
+
+    # Header text (tighter spacing)
+    story.append(Paragraph("ABZ HARDWARE", title_style))
+    story.append(Paragraph("Payment Receipt", subtitle_style))
+
+    # Only Date
+    story.append(Paragraph(f"<b>Date:</b> {payment.created_at.strftime('%Y-%m-%d %H:%M')}", normal_style))
+    story.append(Spacer(1, 6))
+
+    # Payment Details
+    story.append(Paragraph("PAYMENT DETAILS", header_style))
+    story.append(Paragraph(f"Method: {payment.payment_method.title() if payment.payment_method else 'N/A'}", normal_style))
+    story.append(Paragraph(f"Amount: {format_currency(payment.amount)}", normal_style))
+    if payment.reference_number:
+        story.append(Paragraph(f"Ref: {payment.reference_number}", normal_style))
+    story.append(Spacer(1, 6))
+
+    # Order Items
+    order = getattr(payment, 'order', None)
+    if order and order.order_items:
+        story.append(Paragraph("ORDER ITEMS", header_style))
+        story.append(Spacer(1, 4))
+
+        data = [["Product", "Qty", "Price", "Total"]]
+        for item in order.order_items:
+            price = item.final_price or item.original_price or 0
+            total = item.quantity * price
+            product_name = item.product.name if item.product else "N/A"
+
+            # Wrapping for product names
+            data.append([
+                Paragraph(product_name, normal_style),
+                str(item.quantity),
+                f"{price:,.2f}",
+                f"{total:,.2f}"
+            ])
+
+        table = Table(data, colWidths=[85, 25, 45, 45])
+        table.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('ALIGN', (1,1), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('FONTSIZE', (0,0), (-1,-1), 8),
+            ('BACKGROUND', (0,0), (-1,0), colors.whitesmoke),
+        ]))
+        table.hAlign = 'CENTER'
+        story.append(table)
+        story.append(Spacer(1, 6))
+
+        # Total
+        total_amount = sum(item.quantity * (item.final_price or item.original_price or 0) for item in order.order_items)
+        story.append(Paragraph(f"<b>TOTAL: {format_currency(total_amount)}</b>", header_style))
+        story.append(Spacer(1, 10))
+
+        # Served By (firstname only)
+        if order.user:
+            sales_person = f"{order.user.firstname}"
+            story.append(Paragraph(f"Served By: {sales_person}", normal_style))
+            story.append(Spacer(1, 6))
+
+    # Company Contact Info
+    story.append(Paragraph("Phone: 0725000055 / 0711732341", center_style))
+    story.append(Paragraph("Email: info@abzhardware.co.ke", center_style))
+    story.append(Paragraph("Website: www.abzhardware.co.ke", center_style))
+    story.append(Spacer(1, 6))
+
+    # Footer
+    story.append(Paragraph("Thank you for your business!", center_style))
+    story.append(Paragraph("ABZ Hardware", center_style))
+    story.append(Paragraph("Quality Hardware Solutions", center_style))
+
+    doc.build(story)
+
+    pdf = buffer.getvalue()
+    buffer.close()
+
+    from flask import make_response
+    response = make_response(pdf)
+    response.headers['Content-Type'] = 'application/pdf'
+    
+    if action == 'download':
+        response.headers['Content-Disposition'] = f'attachment; filename=receipt_{payment.id}.pdf'
+    else:
+        # For viewing, show inline
+        response.headers['Content-Disposition'] = f'inline; filename=receipt_{payment.id}.pdf'
+    
+    return response
+
+
+
+
 
 # Error handlers
 @app.errorhandler(404)
