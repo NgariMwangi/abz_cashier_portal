@@ -35,6 +35,32 @@
     </div>
 </div>
 
+<!-- Backorder Alert -->
+    {% if order.approvalstatus and order.order_items %}
+        {% set has_backorder = false %}
+        {% for item in order.order_items %}
+            {% if item.product and item.product.stock is not none and item.product.stock < item.quantity %}
+                {% set has_backorder = true %}
+            {% endif %}
+        {% endfor %}
+        
+        {% if has_backorder %}
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="alert alert-warning" role="alert">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-exclamation-triangle fa-2x me-3"></i>
+                        <div>
+                            <h6 class="alert-heading mb-1">⚠️ Backorder Alert</h6>
+                            <p class="mb-0">This order contains items that exceed available stock. Some products are on backorder.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    {% endif %}
+
 <div class="row">
     <!-- Order Details -->
     <div class="col-md-8">
@@ -97,14 +123,14 @@
                              <tr>
                                  <td class="fw-bold">Total Paid:</td>
                                  <td>
-                                     {% if is_fully_paid %}
-                                         <span class="badge bg-success">KSH {{ total_payments|default('0.00') }} (Fully Paid)</span>
-                                     {% else %}
-                                         <span class="badge bg-warning">KSH {{ total_payments|default('0.00') }}</span>
-                                     {% endif %}
+                                                                         {% if is_fully_paid is defined and is_fully_paid is not none and is_fully_paid %}
+                                        <span class="badge bg-success">KSH {{ total_payments|default('0.00') }} (Fully Paid)</span>
+                                    {% else %}
+                                        <span class="badge bg-warning">KSH {{ total_payments|default('0.00') }}</span>
+                                    {% endif %}
                                  </td>
                              </tr>
-                             {% if not is_fully_paid %}
+                             {% if is_fully_paid is defined and is_fully_paid is not none and not is_fully_paid %}
                              <tr>
                                  <td class="fw-bold">Remaining:</td>
                                  <td class="h6 text-danger mb-0">KSH {{ remaining_amount|default('0.00') }}</td>
@@ -113,21 +139,25 @@
                              <tr>
                                  <td class="fw-bold">Payment Status:</td>
                                                                  <td>
-                                    {% if payment_status == 'Fully Paid' %}
+                                    {% if payment_status is defined and payment_status and payment_status == 'Fully Paid' %}
                                         <span class="badge bg-success">
                                             <i class="fas fa-check me-1"></i>Fully Paid
                                         </span>
-                                    {% elif payment_status == 'Partially Paid' %}
+                                    {% elif payment_status is defined and payment_status and payment_status == 'Partially Paid' %}
                                         <span class="badge bg-warning">
                                             <i class="fas fa-clock me-1"></i>Partially Paid
                                         </span>
-                                    {% elif payment_status == 'Unpaid' %}
+                                    {% elif payment_status is defined and payment_status and payment_status == 'Unpaid' %}
                                         <span class="badge bg-danger">
                                             <i class="fas fa-times me-1"></i>Unpaid
                                         </span>
-                                    {% else %}
+                                    {% elif payment_status is defined and payment_status %}
                                         <span class="badge bg-info">
                                             <i class="fas fa-info me-1"></i>{{ payment_status }}
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">
+                                            <i class="fas fa-question me-1"></i>Unknown
                                         </span>
                                     {% endif %}
                                 </td>
@@ -165,21 +195,48 @@
                                 <td>
                                     <div class="d-flex align-items-center">
                                         <div class="avatar-sm bg-primary rounded-circle d-flex align-items-center justify-content-center me-2">
-                                            <span class="text-white fw-bold">{{ item.product.name[0] if item.product and item.product.name else 'P' }}</span>
+                                            <span class="text-white fw-bold">{{ item.product.name[0] if item.product and item.product.name else (item.product_name[0] if item.product_name else 'P') }}</span>
                                         </div>
                                         <div>
-                                            <div class="fw-bold">{{ item.product.name if item.product else 'N/A' }}</div>
-                                            <small class="text-muted">{{ item.product.descriptions[0].content[:50] + '...' if item.product and item.product.descriptions else 'No description' }}</small>
+                                            <div class="fw-bold">{{ item.product.name if item.product else (item.product_name or 'N/A') }}</div>
+                                            {% if not item.product %}
+                                                <small class="text-warning">
+                                                    <i class="fas fa-exclamation-triangle me-1"></i>Manual item - No product link
+                                                </small>
+                                            {% else %}
+                                                <small class="text-muted">{{ item.product.descriptions[0].content[:50] + '...' if item.product.descriptions else 'No description' }}</small>
+                                            {% endif %}
                                         </div>
                                     </div>
                                 </td>
                                 <td>
-                                    <span class="badge bg-secondary">{{ item.product.sub_category.category.name if item.product and item.product.sub_category and item.product.sub_category.category else 'N/A' }}</span>
+                                    {% if item.product and item.product.sub_category and item.product.sub_category.category %}
+                                        <span class="badge bg-secondary">{{ item.product.sub_category.category.name }}</span>
+                                    {% else %}
+                                        <span class="badge bg-warning">Manual Item</span>
+                                    {% endif %}
                                 </td>
                                 <td>
-                                    <span class="badge bg-info">{{ item.product.sub_category.name if item.product and item.product.sub_category else 'N/A' }}</span>
+                                    {% if item.product and item.product.sub_category %}
+                                        <span class="badge bg-info">{{ item.product.sub_category.name }}</span>
+                                    {% else %}
+                                        <span class="badge bg-warning">Manual Item</span>
+                                    {% endif %}
                                 </td>
-                                <td>{{ item.quantity }}</td>
+                                <td>
+                                    {{ item.quantity }}
+                                    {% if item.product and item.product.stock is not none and item.product.stock < item.quantity %}
+                                        <br><small class="text-warning">
+                                            <i class="fas fa-exclamation-triangle me-1"></i>
+                                            Backorder: {{ item.quantity - (item.product.stock or 0) }} units
+                                        </small>
+                                    {% elif not item.product %}
+                                        <br><small class="text-info">
+                                            <i class="fas fa-info-circle me-1"></i>
+                                            Manual item - No stock tracking
+                                        </small>
+                                    {% endif %}
+                                </td>
                                 <td>KSH {{ item.final_price|default(item.original_price)|default('0.00') }}</td>
                                 <td class="fw-bold">KSH {{ (item.quantity * (item.final_price or item.original_price or 0))|default('0.00') }}</td>
                             </tr>
@@ -257,11 +314,11 @@
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <span class="badge bg-primary">Payment #{{ payment.id }}</span>
                             <span class="badge 
-                                {% if payment.payment_status == 'completed' %}bg-success
-                                {% elif payment.payment_status == 'pending' %}bg-warning
-                                {% elif payment.payment_status == 'failed' %}bg-danger
+                                {% if payment.payment_status is defined and payment.payment_status and payment.payment_status == 'completed' %}bg-success
+                                {% elif payment.payment_status is defined and payment.payment_status and payment.payment_status == 'pending' %}bg-warning
+                                {% elif payment.payment_status is defined and payment.payment_status and payment.payment_status == 'failed' %}bg-danger
                                 {% else %}bg-secondary{% endif %}">
-                                {{ payment.payment_status|title }}
+                                {{ payment.payment_status|title if payment.payment_status else 'Unknown' }}
                             </span>
                         </div>
                         <div class="row">
@@ -307,7 +364,7 @@
                     </a>
                     {% if order.payments %}
                         {% for payment in order.payments %}
-                                             {% if payment.payment_status == 'completed' %}
+                                             {% if payment.payment_status is defined and payment.payment_status and payment.payment_status == 'completed' %}
                  <div class="btn-group" role="group">
                      <a href="{{ url_for('receipt_preview', payment_id=payment.id) }}" class="btn btn-outline-primary">
                          <i class="fas fa-eye me-2"></i>Preview #{{ payment.id }}

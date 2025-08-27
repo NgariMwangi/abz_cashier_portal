@@ -9,8 +9,8 @@ from sqlalchemy.orm import joinedload
 from functools import wraps
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'  # Change this to a secure secret key
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:deno0707@localhost:5432/abzone'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:#Deno0707@69.197.187.23:5432/abzone'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:deno0707@localhost:5432/abzone'
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:#Deno0707@69.197.187.23:5432/abzone'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize extensions
@@ -304,6 +304,16 @@ def view_order(order_id):
     is_fully_paid = total_payments_float >= total_amount_float
     remaining_amount = max(0, total_amount_float - total_payments_float)
     
+    # Ensure all variables are properly initialized
+    if total_amount is None:
+        total_amount = 0.0
+    if total_payments is None:
+        total_payments = 0.0
+    if remaining_amount is None:
+        remaining_amount = 0.0
+    if is_fully_paid is None:
+        is_fully_paid = False
+    
     # Alternative calculation: manually sum completed payments
     manual_total = 0
     for payment in completed_payments:
@@ -330,9 +340,12 @@ def view_order(order_id):
         payment_status = 'Fully Paid'
     elif total_payments > 0:
         payment_status = 'Partially Paid'
-        
     else:
         payment_status = 'Unpaid'
+    # Ensure payment_status is set
+    if 'payment_status' not in locals() or payment_status is None:
+        payment_status = 'Unpaid'
+    
     print(f"Debug - Payment status: {payment_status}")  
     print(f"Debug - About to render template with order {order.id}")
     try:
@@ -363,56 +376,83 @@ def approve_order(order_id):
         flash('Cannot approve order with no items.', 'error')
         return redirect(url_for('view_order', order_id=order_id))
     
-    # Validate stock availability before approval
-    insufficient_stock_products = []
-    for item in order.order_items:
-        product = Product.query.get(item.productid)
-        if not product:
-            flash(f'Product not found for order item.', 'error')
-            return redirect(url_for('view_order', order_id=order_id))
-        
-        if product.stock is None or product.stock < item.quantity:
-            insufficient_stock_products.append({
-                'name': product.name,
-                'available': product.stock or 0,
-                'requested': item.quantity
-            })
+    # Check stock availability for informational purposes (but allow approval)
+    low_stock_warnings = []
+    missing_products = []
     
-    if insufficient_stock_products:
-        stock_error_msg = "Insufficient stock for: "
-        for product in insufficient_stock_products:
-            stock_error_msg += f"{product['name']} (Available: {product['available']}, Requested: {product['requested']}); "
-        flash(stock_error_msg, 'error')
-        return redirect(url_for('view_order', order_id=order_id))
+    for item in order.order_items:
+        # Handle both regular products and manual items
+        if item.productid:
+            product = Product.query.get(item.productid)
+            if not product:
+                missing_products.append(f"Product ID {item.productid}")
+                continue
+            
+            # Warn about low stock but don't block approval
+            if product.stock is not None and product.stock < item.quantity:
+                low_stock_warnings.append({
+                    'name': product.name,
+                    'available': product.stock,
+                    'requested': item.quantity,
+                    'shortage': item.quantity - product.stock
+                })
+        else:
+            # This is a manual item without a product relationship
+            missing_products.append(f"Manual item: {item.product_name or 'Unnamed'}")
+    
+    # Show warning about missing products but don't block approval
+    if missing_products:
+        missing_msg = "⚠️ Some order items have missing product information (stock tracking disabled): " + ", ".join(missing_products)
+        flash(missing_msg, 'warning')
+    
+    # Show warning about low stock items
+    if low_stock_warnings:
+        warning_msg = "⚠️ Low stock warning for: "
+        for product in low_stock_warnings:
+            warning_msg += f"{product['name']} (Available: {product['available']}, Requested: {product['requested']}, Shortage: {product['shortage']}); "
+        flash(warning_msg, 'warning')
     
     try:
         # Approve the order
         order.approvalstatus = True
         order.approved_at = datetime.now()
         
-        # Reduce stock quantities and create stock transactions
+        # Reduce stock quantities and create stock transactions (only for products with valid relationships)
         for item in order.order_items:
-            product = Product.query.get(item.productid)
-            previous_stock = product.stock or 0
-            new_stock = previous_stock - item.quantity
-            
-            # Update product stock
-            product.stock = new_stock
-            
-            # Create stock transaction record
-            stock_transaction = StockTransaction(
-                productid=item.productid,
-                userid=current_user.id,
-                transaction_type='remove',
-                quantity=item.quantity,
-                previous_stock=previous_stock,
-                new_stock=new_stock,
-                notes=f'Stock reduced due to order #{order.id} approval'
-            )
-            db.session.add(stock_transaction)
+            if item.productid:
+                product = Product.query.get(item.productid)
+                if product:
+                    previous_stock = product.stock or 0
+                    new_stock = previous_stock - item.quantity
+                    
+                    # Update product stock (can go negative for backorders)
+                    product.stock = new_stock
+                    
+                    # Create stock transaction record
+                    stock_transaction = StockTransaction(
+                        productid=item.productid,
+                        userid=current_user.id,
+                        transaction_type='remove',
+                        quantity=item.quantity,
+                        previous_stock=previous_stock,
+                        new_stock=new_stock,
+                        notes=f'Stock reduced due to order #{order.id} approval (Backorder: {item.quantity - previous_stock if previous_stock < item.quantity else 0} units)'
+                    )
+                    db.session.add(stock_transaction)
+                else:
+                    # Product not found - skip stock transaction (no product to track)
+                    pass
+            else:
+                # Manual item without product ID - skip stock transaction (no product to track)
+                pass
         
         db.session.commit()
-        flash(f'Order #{order.id} has been approved successfully! Stock quantities have been updated.', 'success')
+        
+        # Customize success message based on stock situation
+        if low_stock_warnings:
+            flash(f'Order #{order.id} has been approved successfully! ⚠️ Some items are on backorder due to insufficient stock.', 'success')
+        else:
+            flash(f'Order #{order.id} has been approved successfully! Stock quantities have been updated where applicable.', 'success')
         
     except Exception as e:
         db.session.rollback()
@@ -441,30 +481,37 @@ def cancel_order(order_id):
         order.approvalstatus = False
         order.approved_at = None
         
-        # Restore stock quantities and create stock transactions
+        # Restore stock quantities and create stock transactions (only for products with valid relationships)
         for item in order.order_items:
-            product = Product.query.get(item.productid)
-            if product:
-                previous_stock = product.stock or 0
-                new_stock = previous_stock + item.quantity
-                
-                # Update product stock
-                product.stock = new_stock
-                
-                # Create stock transaction record for restoration
-                stock_transaction = StockTransaction(
-                    productid=item.productid,
-                    userid=current_user.id,
-                    transaction_type='add',
-                    quantity=item.quantity,
-                    previous_stock=previous_stock,
-                    new_stock=new_stock,
-                    notes=f'Stock restored due to order #{order.id} cancellation'
-                )
-                db.session.add(stock_transaction)
+            if item.productid:
+                product = Product.query.get(item.productid)
+                if product:
+                    previous_stock = product.stock or 0
+                    new_stock = previous_stock + item.quantity
+                    
+                    # Update product stock
+                    product.stock = new_stock
+                    
+                    # Create stock transaction record for restoration
+                    stock_transaction = StockTransaction(
+                        productid=item.productid,
+                        userid=current_user.id,
+                        transaction_type='add',
+                        quantity=item.quantity,
+                        previous_stock=previous_stock,
+                        new_stock=new_stock,
+                        notes=f'Stock restored due to order #{order.id} cancellation'
+                    )
+                    db.session.add(stock_transaction)
+                else:
+                    # Product not found - skip stock transaction (no product to track)
+                    pass
+            else:
+                # Manual item without product ID - skip stock transaction (no product to track)
+                pass
         
         db.session.commit()
-        flash(f'Order #{order.id} has been cancelled successfully! Stock quantities have been restored.', 'success')
+        flash(f'Order #{order.id} has been cancelled successfully! Stock quantities have been restored where applicable.', 'success')
         
     except Exception as e:
         db.session.rollback()
@@ -767,6 +814,11 @@ def stock_levels():
     if low_stock:
         query = query.filter(Product.stock < 10)  # Show products with less than 10 in stock
     
+    # Add backorder filter option
+    backorder = request.args.get('backorder', type=bool)
+    if backorder:
+        query = query.filter(Product.stock < 0)  # Show products with negative stock (backorders)
+    
     # Get products with pagination
     products = query.order_by(Product.name).paginate(
         page=page, per_page=20, error_out=False
@@ -779,6 +831,7 @@ def stock_levels():
                          products=products, 
                          branch_id=branch_id,
                          low_stock=low_stock,
+                         backorder=backorder,
                          branches=branches)
 
 # Manual Stock Adjustment Route
@@ -803,9 +856,7 @@ def stock_adjustment():
             if adjustment_type == 'add':
                 new_stock = previous_stock + quantity
             else:  # remove
-                if previous_stock < quantity:
-                    flash(f'Cannot remove {quantity} items. Only {previous_stock} available in stock.', 'error')
-                    return redirect(url_for('stock_adjustment'))
+                # Allow negative stock for backorders
                 new_stock = previous_stock - quantity
             
             # Update product stock
@@ -826,7 +877,10 @@ def stock_adjustment():
             db.session.commit()
             
             action = 'added to' if adjustment_type == 'add' else 'removed from'
-            flash(f'Successfully {action} stock for {product.name}. New stock level: {new_stock}', 'success')
+            stock_status = f"New stock level: {new_stock}"
+            if new_stock < 0:
+                stock_status += f" (Backorder: {abs(new_stock)} units)"
+            flash(f'Successfully {action} stock for {product.name}. {stock_status}', 'success')
             
         except Exception as e:
             db.session.rollback()
@@ -918,7 +972,8 @@ def generate_receipt(payment_id, action='view'):
         for item in order.order_items:
             price = item.final_price or item.original_price or 0
             total = item.quantity * price
-            product_name = item.product.name if item.product else "N/A"
+            # Use product_name from orderdetails if product relationship is null
+            product_name = item.product.name if item.product else (item.product_name or "N/A")
 
             # Wrapping for product names
             data.append([

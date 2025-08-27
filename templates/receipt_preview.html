@@ -89,7 +89,7 @@
                                 <tbody>
                                     {% for item in payment.order.order_items %}
                                     <tr>
-                                        <td>{{ item.product.name if item.product else 'N/A' }}</td>
+                                        <td>{{ item.product.name if item.product else (item.product_name or 'N/A') }}</td>
                                         <td class="text-center">{{ item.quantity }}</td>
                                         <td class="text-end">KSH {{ item.final_price or item.original_price or 0 }}</td>
                                         <td class="text-end">KSH {{ item.quantity * (item.final_price or item.original_price or 0) }}</td>
