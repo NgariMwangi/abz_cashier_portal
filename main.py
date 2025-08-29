@@ -1001,7 +1001,7 @@ def generate_receipt(payment_id, action='view'):
     # Styles
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=12, alignment=1, spaceAfter=1)   # tighter
-    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Heading2'], fontSize=11, alignment=1, spaceAfter=4)  # reduced
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Heading2'], fontSize=10, alignment=1, spaceAfter=4)  # reduced
     header_style = ParagraphStyle('Header', parent=styles['Normal'], fontSize=9, alignment=0, spaceAfter=4, fontName="Helvetica-Bold")
     normal_style = ParagraphStyle('Normal', parent=styles['Normal'], fontSize=8, alignment=0, spaceAfter=2)
     center_style = ParagraphStyle('Center', parent=styles['Normal'], fontSize=8, alignment=1, spaceAfter=2)
