@@ -1019,7 +1019,7 @@ def generate_receipt(payment_id, action='view'):
 
     # Header text (tighter spacing)
     story.append(Paragraph("ABZ HARDWARE", title_style))
-    story.append(Paragraph("Payment Receipt", subtitle_style))
+    story.append(Paragraph("Acknowledgement Receipt", subtitle_style))
 
     # Only Date
     story.append(Paragraph(f"<b>Date:</b> {(payment.created_at + timedelta(hours=3)).strftime('%Y-%m-%d %H:%M')}", normal_style))
