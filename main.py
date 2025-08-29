@@ -989,18 +989,26 @@ def generate_receipt(payment_id, action='view'):
 
     buffer = BytesIO()
     page_width = 210  # safe width for 80mm printer (~74mm printable area)
-
-    # Calculate dynamic height based on content - start with minimum height
-    min_height = 400  # minimum height for basic receipt
-    doc = BaseDocTemplate(buffer, pagesize=(page_width, min_height),
+    
+    # Create a single page with very large height to ensure all content fits
+    # This prevents page breaks and creates one continuous receipt
+    doc = BaseDocTemplate(buffer, pagesize=(page_width, 1200),
                           leftMargin=10, rightMargin=10, topMargin=10, bottomMargin=10)
-    # Create frame that uses full available height
+    
+    # Create a frame that spans the entire page height
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id='normal')
-    template = PageTemplate(id='receipt', frames=[frame])
+    
+    # Custom page template that prevents page breaks
+    def onPage(canvas, doc):
+        # This ensures only one page is created
+        pass
+    
+    template = PageTemplate(id='receipt', frames=[frame], onPage=onPage)
     doc.addPageTemplates([template])
     
-    # Set page size to auto-adjust based on content
-    doc.pagesize = (page_width, min_height)
+    # Disable page breaks and set to single page mode
+    doc.allowSplitting = 0
+    doc.pageBreakBefore = 0
 
     story = []
 
@@ -1095,23 +1103,7 @@ def generate_receipt(payment_id, action='view'):
     story.append(Paragraph("ABZ Hardware", center_style))
     story.append(Paragraph("Quality Hardware Solutions", center_style))
 
-    # Build the document and get the actual height needed
-    doc.build(story)
-    
-    # Get the actual height used by the content
-    actual_height = doc.height + 20  # Add some padding
-    
-    # Update the page size to match the actual content height
-    doc.pagesize = (page_width, actual_height)
-    
-    # Rebuild with the correct height
-    buffer.seek(0)
-    buffer.truncate(0)
-    doc = BaseDocTemplate(buffer, pagesize=(page_width, actual_height),
-                          leftMargin=10, rightMargin=10, topMargin=10, bottomMargin=10)
-    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id='normal')
-    template = PageTemplate(id='receipt', frames=[frame])
-    doc.addPageTemplates([template])
+    # Build the document
     doc.build(story)
 
     pdf = buffer.getvalue()
