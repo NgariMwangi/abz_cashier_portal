@@ -992,7 +992,7 @@ def generate_receipt(payment_id, action='view'):
     
     # Create a single page with very large height to ensure all content fits
     # This prevents page breaks and creates one continuous receipt
-    doc = BaseDocTemplate(buffer, pagesize=(page_width, 1200),
+    doc = BaseDocTemplate(buffer, pagesize=(page_width, 3000),
                           leftMargin=10, rightMargin=10, topMargin=10, bottomMargin=10)
     
     # Create a frame that spans the entire page height
