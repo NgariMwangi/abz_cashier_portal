@@ -342,7 +342,7 @@
 <script>
 function processPayment(action) {
     const actionText = action === 'complete' ? 'complete' : 'mark as failed';
-    if (confirm(`Are you sure you want to ${actionText} Payment #{{ payment.id }}?`)) {
+    if (confirm('Are you sure you want to ' + actionText + ' Payment #{{ payment.id }}?')) {
         document.getElementById('actionInput').value = action;
         document.getElementById('processingForm').submit();
     }

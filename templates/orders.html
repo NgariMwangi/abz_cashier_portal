@@ -236,7 +236,7 @@ function approveOrder(orderId) {
     if (confirm('Are you sure you want to approve this order?')) {
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = `/order/${orderId}/approve`;
+        form.action = '/order/' + orderId + '/approve';
         document.body.appendChild(form);
         form.submit();
     }

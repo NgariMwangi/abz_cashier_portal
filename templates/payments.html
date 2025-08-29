@@ -258,10 +258,10 @@
 <script>
 function processPayment(paymentId, action) {
     const actionText = action === 'complete' ? 'complete' : 'mark as failed';
-    if (confirm(`Are you sure you want to ${actionText} this payment?`)) {
+    if (confirm('Are you sure you want to ' + actionText + ' this payment?')) {
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = `/payment/${paymentId}/process`;
+        form.action = '/payment/' + paymentId + '/process';
         
         const actionInput = document.createElement('input');
         actionInput.type = 'hidden';
