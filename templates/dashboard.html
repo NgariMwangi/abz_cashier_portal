@@ -217,7 +217,7 @@
                                         <span class="badge bg-secondary">N/A</span>
                                     {% endif %}
                                 </td>
-                                <td>{{ order.created_at.strftime('%m/%d %H:%M') }}</td>
+                                <td>{{ order.created_at|east_africa_time|strftime('%m/%d %H:%M') }}</td>
                                 <td>
                                     <div class="btn-group" role="group">
                                         <a href="{{ url_for('view_order', order_id=order.id) }}" class="btn btn-sm btn-outline-primary">
@@ -280,139 +280,14 @@
         </div>
     </div>
 
-    <!-- Recent Activity -->
-    <div class="col-md-6 mb-4">
-        <div class="card shadow">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-history me-2"></i>Recent Activity
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="timeline">
-                    <div class="timeline-item">
-                        <div class="timeline-marker bg-success"></div>
-                        <div class="timeline-content">
-                            <h6 class="timeline-title">Payment Received</h6>
-                            <p class="timeline-text">Order #1234 - KSH 15,000</p>
-                            <small class="text-muted">2 minutes ago</small>
-                        </div>
-                    </div>
-                    <div class="timeline-item">
-                        <div class="timeline-marker bg-primary"></div>
-                        <div class="timeline-content">
-                            <h6 class="timeline-title">Order Approved</h6>
-                            <p class="timeline-text">Order #1233 - Electronics</p>
-                            <small class="text-muted">15 minutes ago</small>
-                        </div>
-                    </div>
-                    <div class="timeline-item">
-                        <div class="timeline-marker bg-warning"></div>
-                        <div class="timeline-content">
-                            <h6 class="timeline-title">New Order</h6>
-                            <p class="timeline-text">Order #1232 - KSH 8,999</p>
-                            <small class="text-muted">1 hour ago</small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- Quick Receipt Generation -->
-    <div class="col-md-6 mb-4">
-        <div class="card shadow">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0">
-                    <i class="fas fa-file-pdf me-2"></i>Quick Receipt Generation
-                </h5>
-            </div>
-            <div class="card-body">
-                <p class="text-muted mb-3">Generate receipts for recent completed payments</p>
-                
-                <!-- Sample receipt buttons (you can make these dynamic) -->
-                <div class="d-grid gap-2">
-                    <div class="d-flex justify-content-between align-items-center p-2 border rounded">
-                        <div>
-                            <small class="text-muted">Payment #1234</small>
-                            <div class="fw-bold">KSH 15,000</div>
-                        </div>
-                        <div class="btn-group" role="group">
-                            <a href="#" class="btn btn-sm btn-outline-info" target="_blank">
-                                <i class="fas fa-eye me-1"></i>View
-                            </a>
-                            <a href="#" class="btn btn-sm btn-outline-success">
-                                <i class="fas fa-download me-1"></i>Download
-                            </a>
-                        </div>
-                    </div>
-                    
-                    <div class="d-flex justify-content-between align-items-center p-2 border rounded">
-                        <div>
-                            <small class="text-muted">Payment #1233</small>
-                            <div class="fw-bold">KSH 8,999</div>
-                        </div>
-                        <div class="btn-group" role="group">
-                            <a href="#" class="btn btn-sm btn-outline-info" target="_blank">
-                                <i class="fas fa-eye me-1"></i>View
-                            </a>
-                            <a href="#" class="btn btn-sm btn-outline-success">
-                                <i class="fas fa-download me-1"></i>Download
-                            </a>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="text-center mt-3">
-                    <a href="{{ url_for('payments') }}" class="btn btn-outline-info btn-sm">
-                        <i class="fas fa-list me-1"></i>View All Payments
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
+
+
 </div>
 {% endblock %}
 
 {% block styles %}
 <style>
-.timeline {
-    position: relative;
-    padding-left: 30px;
-}
-
-.timeline-item {
-    position: relative;
-    margin-bottom: 20px;
-}
-
-.timeline-marker {
-    position: absolute;
-    left: -35px;
-    top: 0;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid #fff;
-    box-shadow: 0 0 0 3px #dee2e6;
-}
-
-.timeline-content {
-    padding-left: 10px;
-}
-
-.timeline-title {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 600;
-}
-
-.timeline-text {
-    margin: 5px 0;
-    font-size: 13px;
-    color: #6c757d;
-}
-
 .border-left-primary {
     border-left: 4px solid #007bff !important;
 }

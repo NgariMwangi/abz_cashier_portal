@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, Branch, Product, Order, OrderItem, Payment, StockTransaction, Supplier, PurchaseOrder, PurchaseOrderItem, Quotation, QuotationItem, SubCategory
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
@@ -19,6 +19,24 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'Please log in to access this page.'
+
+# Custom Jinja2 filters
+@app.template_filter('east_africa_time')
+def east_africa_time(dt):
+    """Convert UTC time to East Africa Time (+3 hours)"""
+    if dt is None:
+        return None
+    return dt + timedelta(hours=3)
+
+@app.template_filter('strftime')
+def strftime_filter(dt, format_string):
+    """Format datetime objects using strftime"""
+    if dt is None:
+        return None
+    try:
+        return dt.strftime(format_string)
+    except (AttributeError, ValueError):
+        return str(dt)
 
 @login_manager.unauthorized_handler
 def unauthorized():
@@ -766,6 +784,59 @@ def sales_report():
                          total_revenue=total_revenue,
                          total_payments=total_payments)
 
+@app.route('/sales-report/daily-details/<date>')
+@cashier_required
+def daily_sales_details(date):
+    """Show detailed breakdown of sales for a specific date"""
+    try:
+        # Parse the date
+        date_obj = datetime.strptime(date, '%Y-%m-%d')
+        
+        # Get all payments for the specific date
+        payments = db.session.query(Payment).filter(
+            Payment.payment_status == 'completed',
+            func.date(Payment.created_at) == date_obj.date()
+        ).order_by(Payment.created_at.desc()).all()
+        
+        # Get order details for each payment
+        payment_details = []
+        total_revenue = 0
+        
+        for payment in payments:
+            order = Order.query.get(payment.orderid)
+            if order:
+                # Get order items
+                order_items = []
+                for item in order.order_items:
+                    product_name = item.product.name if item.product else (item.product_name or 'Manual Item')
+                    order_items.append({
+                        'product_name': product_name,
+                        'quantity': item.quantity,
+                        'unit_price': float(item.final_price or item.original_price or 0),
+                        'total_price': float(item.final_price or item.original_price or 0) * item.quantity
+                    })
+                
+                payment_details.append({
+                    'payment': payment,
+                    'order': order,
+                    'order_items': order_items,
+                    'customer_name': f"{order.user.firstname} {order.user.lastname}",
+                    'payment_method': payment.payment_method,
+                    'payment_time': payment.created_at
+                })
+                
+                total_revenue += float(payment.amount)
+        
+        return render_template('daily_sales_details.html',
+                             date=date_obj,
+                             payment_details=payment_details,
+                             total_revenue=total_revenue,
+                             total_payments=len(payments))
+                             
+    except ValueError:
+        flash('Invalid date format', 'error')
+        return redirect(url_for('sales_report'))
+
 # Stock Transactions Route
 @app.route('/stock-transactions')
 @cashier_required
@@ -951,7 +1022,7 @@ def generate_receipt(payment_id, action='view'):
     story.append(Paragraph("Payment Receipt", subtitle_style))
 
     # Only Date
-    story.append(Paragraph(f"<b>Date:</b> {payment.created_at.strftime('%Y-%m-%d %H:%M')}", normal_style))
+    story.append(Paragraph(f"<b>Date:</b> {(payment.created_at + timedelta(hours=3)).strftime('%Y-%m-%d %H:%M')}", normal_style))
     story.append(Spacer(1, 6))
 
     # Payment Details

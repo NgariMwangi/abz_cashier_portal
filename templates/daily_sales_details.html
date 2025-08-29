@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+
+{% block title %}Daily Sales Details - {{ date.strftime('%B %d, %Y') }} - ABZ Cashier Portal{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1 class="mb-2">
+                    <i class="fas fa-calendar-day me-2"></i>Daily Sales Details
+                </h1>
+                <p class="text-muted mb-0">{{ date.strftime('%A, %B %d, %Y') }}</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('sales_report') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Sales Report
+                </a>
+                <button type="button" class="btn btn-success" onclick="exportDailyReport()">
+                    <i class="fas fa-download me-2"></i>Export Daily Report
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card border-left-primary shadow h-100">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                            Total Revenue
+                        </div>
+                        <div class="h3 mb-0 font-weight-bold text-primary">
+                            KSH {{ total_revenue|round(2) }}
+                        </div>
+                        <div class="text-xs text-muted">For {{ date.strftime('%B %d, %Y') }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-dollar-sign fa-2x text-primary"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card border-left-success shadow h-100">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                            Total Payments
+                        </div>
+                        <div class="h3 mb-0 font-weight-bold text-success">
+                            {{ total_payments }}
+                        </div>
+                        <div class="text-xs text-muted">Completed payments</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-credit-card fa-2x text-success"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card border-left-info shadow h-100">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                            Average Revenue
+                        </div>
+                        <div class="h3 mb-0 font-weight-bold text-info">
+                            KSH {{ (total_revenue / total_payments)|round(2) if total_payments > 0 else 0 }}
+                        </div>
+                        <div class="text-xs text-muted">Per payment</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-chart-line fa-2x text-info"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Details -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>Payment Details
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if payment_details %}
+                <div class="accordion" id="paymentsAccordion">
+                    {% for detail in payment_details %}
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="payment{{ detail.payment.id }}">
+                            <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ detail.payment.id }}" aria-expanded="{% if loop.first %}true{% else %}false{% endif %}" aria-controls="collapse{{ detail.payment.id }}">
+                                <div class="d-flex justify-content-between align-items-center w-100 me-3">
+                                    <div>
+                                        <strong>Payment #{{ detail.payment.id }}</strong> - 
+                                        <span class="text-success">KSH {{ detail.payment.amount }}</span>
+                                    </div>
+                                    <div class="text-muted">
+                                        <small>{{ detail.payment_time|east_africa_time|strftime('%H:%M') }}</small>
+                                    </div>
+                                </div>
+                            </button>
+                        </h2>
+                        <div id="collapse{{ detail.payment.id }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" aria-labelledby="payment{{ detail.payment.id }}" data-bs-parent="#paymentsAccordion">
+                            <div class="accordion-body">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <h6>Customer Information</h6>
+                                        <p class="mb-1"><strong>Name:</strong> {{ detail.customer_name }}</p>
+                                        <p class="mb-1"><strong>Order ID:</strong> #{{ detail.order.id }}</p>
+                                        <p class="mb-1"><strong>Payment Method:</strong> 
+                                            <span class="badge bg-primary">{{ detail.payment_method|title }}</span>
+                                        </p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6>Payment Details</h6>
+                                        <p class="mb-1"><strong>Amount:</strong> KSH {{ detail.payment.amount }}</p>
+                                        <p class="mb-1"><strong>Reference:</strong> {{ detail.payment.reference_number or 'N/A' }}</p>
+                                        <p class="mb-1"><strong>Time:</strong> {{ detail.payment_time|east_africa_time|strftime('%H:%M:%S') }}</p>
+                                    </div>
+                                </div>
+                                
+                                <h6>Order Items</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Product</th>
+                                                <th>Quantity</th>
+                                                <th>Unit Price</th>
+                                                <th>Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for item in detail.order_items %}
+                                            <tr>
+                                                <td>{{ item.product_name }}</td>
+                                                <td>{{ item.quantity }}</td>
+                                                <td>KSH {{ item.unit_price|round(2) }}</td>
+                                                <td>KSH {{ item.total_price|round(2) }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                        <tfoot class="table-light">
+                                            <tr>
+                                                <td colspan="3" class="text-end fw-bold">Order Total:</td>
+                                                <td class="fw-bold">KSH {{ detail.payment.amount }}</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                                
+                                {% if detail.payment.notes %}
+                                <div class="mt-3">
+                                    <h6>Notes:</h6>
+                                    <p class="text-muted mb-0">{{ detail.payment.notes }}</p>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
+                    <h5 class="text-muted">No payments found for this date</h5>
+                    <p class="text-muted">There were no completed payments on {{ date.strftime('%B %d, %Y') }}.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Export functionality for daily report
+function exportDailyReport() {
+    // This would typically generate a CSV or PDF report for the specific date
+    alert('Export functionality for daily report would be implemented here');
+}
+</script>
+{% endblock %}
+
+{% block styles %}
+<style>
+.border-left-primary {
+    border-left: 4px solid #007bff !important;
+}
+
+.border-left-success {
+    border-left: 4px solid #28a745 !important;
+}
+
+.border-left-info {
+    border-left: 4px solid #17a2b8 !important;
+}
+
+.accordion-button:not(.collapsed) {
+    background-color: #f8f9fa;
+    color: #495057;
+}
+
+.accordion-button:focus {
+    box-shadow: none;
+    border-color: rgba(0, 123, 255, 0.25);
+}
+</style>
+{% endblock %}

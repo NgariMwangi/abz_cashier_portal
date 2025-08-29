@@ -54,7 +54,7 @@
                     <div class="row">
                         <div class="col-6">
                             <strong>Date:</strong><br>
-                            <span class="text-muted">{{ payment.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                            <span class="text-muted">{{ payment.created_at|east_africa_time|strftime('%Y-%m-%d %H:%M') }}</span>
                         </div>
                         <div class="col-6">
                             <strong>Payment ID:</strong><br>
@@ -180,7 +180,7 @@
                 
                 <div class="mt-3">
                     <small class="text-muted">
-                        <strong>Generated:</strong> {{ payment.created_at.strftime('%B %d, %Y at %I:%M %p') }}
+                        <strong>Generated:</strong> {{ payment.created_at|east_africa_time|strftime('%B %d, %Y at %I:%M %p') }}
                     </small>
                 </div>
             </div>

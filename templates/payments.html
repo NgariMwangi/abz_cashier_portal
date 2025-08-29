@@ -153,9 +153,9 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <div class="text-muted">
-                                        <div>{{ payment.created_at.strftime('%m/%d/%Y') }}</div>
-                                        <small>{{ payment.created_at.strftime('%H:%M') }}</small>
+                                                                        <div class="text-muted">
+                                        <div>{{ payment.created_at|east_africa_time|strftime('%m/%d/%Y') }}</div>
+                                        <small>{{ payment.created_at|east_africa_time|strftime('%H:%M') }}</small>
                                     </div>
                                 </td>
                                 <td>

@@ -114,12 +114,12 @@
                             </tr>
                             <tr>
                                 <td class="fw-bold">Created:</td>
-                                <td>{{ payment.created_at.strftime('%B %d, %Y at %I:%M %p') }}</td>
+                                <td>{{ payment.created_at|east_africa_time|strftime('%B %d, %Y at %I:%M %p') }}</td>
                             </tr>
                             {% if payment.payment_date %}
                             <tr>
                                 <td class="fw-bold">Processed:</td>
-                                <td>{{ payment.payment_date.strftime('%B %d, %Y at %I:%M %p') }}</td>
+                                <td>{{ payment.payment_date|east_africa_time|strftime('%B %d, %Y at %I:%M %p') }}</td>
                             </tr>
                             {% endif %}
                             <tr>
@@ -188,7 +188,7 @@
                             </tr>
                             <tr>
                                 <td class="fw-bold">Order Date:</td>
-                                <td>{{ payment.order.created_at.strftime('%B %d, %Y') }}</td>
+                                <td>{{ payment.order.created_at|east_africa_time|strftime('%B %d, %Y') }}</td>
                             </tr>
                             <tr>
                                 <td class="fw-bold">Payment Status:</td>
@@ -283,7 +283,7 @@
             <div class="card-body text-center">
                 <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
                 <p class="text-success mb-0">This payment has been successfully processed.</p>
-                <small class="text-muted">Completed on {{ payment.payment_date.strftime('%B %d, %Y at %I:%M %p') if payment.payment_date else 'N/A' }}</small>
+                                        <small class="text-muted">Completed on {{ payment.payment_date|east_africa_time|strftime('%B %d, %Y at %I:%M %p') if payment.payment_date else 'N/A' }}</small>
             </div>
         </div>
         {% elif payment.payment_status == 'failed' %}
