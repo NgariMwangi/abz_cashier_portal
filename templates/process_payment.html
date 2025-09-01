@@ -220,8 +220,8 @@
                     {% endif %}
 
                     <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-credit-card me-2"></i>Create Payment
+                        <button type="submit" class="btn btn-success" id="create-payment-btn">
+                            <i class="fas fa-credit-card me-2"></i><span id="btn-text">Create Payment</span>
                         </button>
                         <a href="{{ url_for('view_order', order_id=order.id) }}" class="btn btn-outline-secondary">
                             Cancel
@@ -305,6 +305,45 @@ document.getElementById('amount').addEventListener('input', function() {
             completionStatus.style.display = 'none';
         }
     }
+});
+
+// Prevent multiple form submissions
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form');
+    const submitBtn = document.getElementById('create-payment-btn');
+    const btnText = document.getElementById('btn-text');
+    let isSubmitting = false;
+    
+    form.addEventListener('submit', function(e) {
+        if (isSubmitting) {
+            e.preventDefault();
+            return false;
+        }
+        
+        isSubmitting = true;
+        submitBtn.disabled = true;
+        btnText.textContent = 'Processing...';
+        submitBtn.classList.add('disabled');
+        
+        // Add a spinner icon
+        const icon = submitBtn.querySelector('i');
+        if (icon) {
+            icon.className = 'fas fa-spinner fa-spin me-2';
+        }
+        
+        // Re-enable button after 10 seconds as a safety measure
+        setTimeout(function() {
+            if (isSubmitting) {
+                isSubmitting = false;
+                submitBtn.disabled = false;
+                btnText.textContent = 'Create Payment';
+                submitBtn.classList.remove('disabled');
+                if (icon) {
+                    icon.className = 'fas fa-credit-card me-2';
+                }
+            }
+        }, 10000);
+    });
 });
 </script>
 {% endblock %}
