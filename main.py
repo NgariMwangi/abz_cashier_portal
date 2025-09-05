@@ -8,6 +8,34 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from functools import wraps
 app = Flask(__name__)
+
+# Branch access control helper functions
+def get_user_accessible_branch_ids():
+    """Get list of branch IDs the current user has access to"""
+    if not current_user.is_authenticated:
+        return []
+    
+    if current_user.has_all_branch_access():
+        # User has access to all branches - return all branch IDs
+        return [branch.id for branch in Branch.query.all()]
+    else:
+        # User has limited access - return their accessible branch IDs
+        return current_user.accessible_branch_ids or []
+
+def filter_by_user_branches(query, branch_field):
+    """Filter a query by user's accessible branches"""
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    if accessible_branch_ids:
+        return query.filter(branch_field.in_(accessible_branch_ids))
+    else:
+        # If user has no branch access, return empty query
+        return query.filter(False)
+
+def get_user_accessible_branches():
+    """Get Branch objects for user's accessible branches"""
+    if not current_user.is_authenticated:
+        return []
+    return current_user.get_accessible_branches()
 app.config['SECRET_KEY'] = 'your-secret-key-here'  # Change this to a secure secret key
 # app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:deno0707@localhost:5432/abzone'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:#Deno0707@69.197.187.23:5432/abzone'
@@ -127,27 +155,38 @@ def dashboard():
     # Get today's date
     today = date.today()
     
-    # Get pending orders count
-    pending_orders_count = Order.query.filter_by(approvalstatus=False).count()
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
     
-    # Get today's orders count
-    today_orders_count = Order.query.filter(
-        func.date(Order.created_at) == today
-    ).count()
+    # Get pending orders count (filtered by accessible branches)
+    pending_orders_query = Order.query.filter_by(approvalstatus=False)
+    if accessible_branch_ids:
+        pending_orders_query = pending_orders_query.filter(Order.branchid.in_(accessible_branch_ids))
+    pending_orders_count = pending_orders_query.count()
+    
+    # Get today's orders count (filtered by accessible branches)
+    today_orders_query = Order.query.filter(func.date(Order.created_at) == today)
+    if accessible_branch_ids:
+        today_orders_query = today_orders_query.filter(Order.branchid.in_(accessible_branch_ids))
+    today_orders_count = today_orders_query.count()
     
     # Get pending payments count (all payments are now completed, so this will be 0)
     pending_payments_count = 0
     
-    # Get today's revenue
-    today_revenue = db.session.query(func.sum(Payment.amount)).filter(
+    # Get today's revenue (filtered by accessible branches)
+    today_revenue_query = db.session.query(func.sum(Payment.amount)).join(Order).filter(
         func.date(Payment.created_at) == today,
         Payment.payment_status == 'completed'
-    ).scalar() or 0
+    )
+    if accessible_branch_ids:
+        today_revenue_query = today_revenue_query.filter(Order.branchid.in_(accessible_branch_ids))
+    today_revenue = today_revenue_query.scalar() or 0
     
-    # Get recent pending orders
-    recent_orders = Order.query.filter_by(approvalstatus=False).order_by(
-        Order.created_at.desc()
-    ).limit(5).all()
+    # Get recent pending orders (filtered by accessible branches)
+    recent_orders_query = Order.query.filter_by(approvalstatus=False)
+    if accessible_branch_ids:
+        recent_orders_query = recent_orders_query.filter(Order.branchid.in_(accessible_branch_ids))
+    recent_orders = recent_orders_query.order_by(Order.created_at.desc()).limit(5).all()
     
     # Calculate total amount and payment status for each recent order
     for order in recent_orders:
@@ -178,9 +217,16 @@ def dashboard():
             else:
                 order.payment_status = 'Unpaid'
     
-    # Get payment counts
-    completed_payments_count = Payment.query.filter_by(payment_status='completed').count()
-    failed_payments_count = Payment.query.filter_by(payment_status='failed').count()
+    # Get payment counts (filtered by accessible branches)
+    completed_payments_query = Payment.query.join(Order).filter_by(payment_status='completed')
+    if accessible_branch_ids:
+        completed_payments_query = completed_payments_query.filter(Order.branchid.in_(accessible_branch_ids))
+    completed_payments_count = completed_payments_query.count()
+    
+    failed_payments_query = Payment.query.join(Order).filter_by(payment_status='failed')
+    if accessible_branch_ids:
+        failed_payments_query = failed_payments_query.filter(Order.branchid.in_(accessible_branch_ids))
+    failed_payments_count = failed_payments_query.count()
     
     return render_template('dashboard.html',
                          pending_orders_count=pending_orders_count,
@@ -204,10 +250,11 @@ def profile():
 @app.route('/orders')
 @cashier_required
 def orders():
-    
-    
     page = request.args.get('page', 1, type=int)
     status_filter = request.args.get('status', 'all')
+    
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
     
     if status_filter == 'pending':
         orders_query = Order.query.filter_by(approvalstatus=False)
@@ -215,6 +262,10 @@ def orders():
         orders_query = Order.query.filter_by(approvalstatus=True)
     else:
         orders_query = Order.query
+    
+    # Filter by accessible branches
+    if accessible_branch_ids:
+        orders_query = orders_query.filter(Order.branchid.in_(accessible_branch_ids))
     
     orders = orders_query.order_by(Order.created_at.desc()).paginate(
         page=page, per_page=20, error_out=False
@@ -284,6 +335,11 @@ def view_order(order_id):
     order = Order.query.options(
         db.joinedload(Order.order_items).joinedload(OrderItem.product).joinedload(Product.sub_category).joinedload(SubCategory.category)
     ).get_or_404(order_id)
+    
+    # Check if user has access to this order's branch
+    if not current_user.has_branch_access(order.branchid):
+        flash('Access denied. You do not have permission to view this order.', 'error')
+        return redirect(url_for('orders'))
     
     # Calculate total amount from order items
     total_amount = 0
@@ -383,6 +439,11 @@ def view_order(order_id):
 @cashier_required
 def approve_order(order_id):
     order = Order.query.get_or_404(order_id)
+    
+    # Check if user has access to this order's branch
+    if not current_user.has_branch_access(order.branchid):
+        flash('Access denied. You do not have permission to approve this order.', 'error')
+        return redirect(url_for('orders'))
     
     # Check if order is already approved
     if order.approvalstatus:
@@ -484,6 +545,11 @@ def approve_order(order_id):
 def cancel_order(order_id):
     order = Order.query.get_or_404(order_id)
     
+    # Check if user has access to this order's branch
+    if not current_user.has_branch_access(order.branchid):
+        flash('Access denied. You do not have permission to cancel this order.', 'error')
+        return redirect(url_for('orders'))
+    
     # Check if order is approved
     if not order.approvalstatus:
         flash(f'Order #{order.id} is not approved yet. Cannot cancel.', 'warning')
@@ -544,6 +610,11 @@ def process_payment_from_order(order_id):
     from sqlalchemy import func
     
     order = Order.query.get_or_404(order_id)
+    
+    # Check if user has access to this order's branch
+    if not current_user.has_branch_access(order.branchid):
+        flash('Access denied. You do not have permission to process payments for this order.', 'error')
+        return redirect(url_for('orders'))
     
     if request.method == 'POST':
         amount = request.form.get('amount')
@@ -670,12 +741,19 @@ def payments():
     page = request.args.get('page', 1, type=int)
     status_filter = request.args.get('status', 'all')
     
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
     if status_filter == 'completed':
-        payments_query = Payment.query.filter_by(payment_status='completed')
+        payments_query = Payment.query.join(Order).filter_by(payment_status='completed')
     elif status_filter == 'failed':
-        payments_query = Payment.query.filter_by(payment_status='failed')
+        payments_query = Payment.query.join(Order).filter_by(payment_status='failed')
     else:
-        payments_query = Payment.query
+        payments_query = Payment.query.join(Order)
+    
+    # Filter by accessible branches
+    if accessible_branch_ids:
+        payments_query = payments_query.filter(Order.branchid.in_(accessible_branch_ids))
     
     payments = payments_query.order_by(Payment.created_at.desc()).paginate(
         page=page, per_page=20, error_out=False
@@ -687,6 +765,11 @@ def payments():
 @cashier_required
 def view_payment(payment_id):
     payment = Payment.query.get_or_404(payment_id)
+    
+    # Check if user has access to this payment's order branch
+    if not current_user.has_branch_access(payment.order.branchid):
+        flash('Access denied. You do not have permission to view this payment.', 'error')
+        return redirect(url_for('payments'))
     
     # Calculate total amount for the related order if it exists
     if hasattr(payment, 'order') and payment.order:
@@ -705,6 +788,12 @@ def process_payment(payment_id):
     from sqlalchemy import func
     
     payment = Payment.query.get_or_404(payment_id)
+    
+    # Check if user has access to this payment's order branch
+    if not current_user.has_branch_access(payment.order.branchid):
+        flash('Access denied. You do not have permission to process this payment.', 'error')
+        return redirect(url_for('payments'))
+    
     action = request.form.get('action')
     
     if action == 'complete':
@@ -762,16 +851,25 @@ def sales_report():
     start_dt = datetime.strptime(start_date, '%Y-%m-%d')
     end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
     
-    # Get sales data
-    sales_data = db.session.query(
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Get sales data (filtered by accessible branches)
+    sales_data_query = db.session.query(
         func.date(Payment.created_at).label('date'),
         func.count(Payment.id).label('payment_count'),
         func.sum(Payment.amount).label('total_amount')
-    ).filter(
+    ).join(Order).filter(
         Payment.payment_status == 'completed',
         Payment.created_at >= start_dt,
         Payment.created_at < end_dt
-    ).group_by(func.date(Payment.created_at)).order_by(func.date(Payment.created_at)).all()
+    )
+    
+    # Filter by accessible branches
+    if accessible_branch_ids:
+        sales_data_query = sales_data_query.filter(Order.branchid.in_(accessible_branch_ids))
+    
+    sales_data = sales_data_query.group_by(func.date(Payment.created_at)).order_by(func.date(Payment.created_at)).all()
     
     # Calculate totals
     total_revenue = sum(row.total_amount for row in sales_data if row.total_amount)
@@ -792,11 +890,20 @@ def daily_sales_details(date):
         # Parse the date
         date_obj = datetime.strptime(date, '%Y-%m-%d')
         
-        # Get all payments for the specific date
-        payments = db.session.query(Payment).filter(
+        # Get accessible branch IDs for current user
+        accessible_branch_ids = get_user_accessible_branch_ids()
+        
+        # Get all payments for the specific date (filtered by accessible branches)
+        payments_query = db.session.query(Payment).join(Order).filter(
             Payment.payment_status == 'completed',
             func.date(Payment.created_at) == date_obj.date()
-        ).order_by(Payment.created_at.desc()).all()
+        )
+        
+        # Filter by accessible branches
+        if accessible_branch_ids:
+            payments_query = payments_query.filter(Order.branchid.in_(accessible_branch_ids))
+        
+        payments = payments_query.order_by(Payment.created_at.desc()).all()
         
         # Get order details for each payment
         payment_details = []
@@ -845,8 +952,15 @@ def stock_transactions():
     transaction_type = request.args.get('type', 'all')
     product_id = request.args.get('product_id', type=int)
     
-    # Build query
-    query = StockTransaction.query
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Build query with branch filtering
+    query = StockTransaction.query.join(Product)
+    
+    # Filter by accessible branches
+    if accessible_branch_ids:
+        query = query.filter(Product.branchid.in_(accessible_branch_ids))
     
     if transaction_type != 'all':
         query = query.filter_by(transaction_type=transaction_type)
@@ -859,8 +973,11 @@ def stock_transactions():
         page=page, per_page=20, error_out=False
     )
     
-    # Get all products for filter dropdown
-    products = Product.query.all()
+    # Get all products for filter dropdown (filtered by accessible branches)
+    products_query = Product.query
+    if accessible_branch_ids:
+        products_query = products_query.filter(Product.branchid.in_(accessible_branch_ids))
+    products = products_query.all()
     
     return render_template('stock_transactions.html', 
                          transactions=transactions, 
@@ -876,10 +993,21 @@ def stock_levels():
     branch_id = request.args.get('branch_id', type=int)
     low_stock = request.args.get('low_stock', type=bool)
     
-    # Build query
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Build query with branch filtering
     query = Product.query
     
+    # Filter by accessible branches
+    if accessible_branch_ids:
+        query = query.filter(Product.branchid.in_(accessible_branch_ids))
+    
     if branch_id:
+        # Also check if user has access to the requested branch
+        if branch_id not in accessible_branch_ids:
+            flash('Access denied. You do not have permission to view this branch.', 'error')
+            return redirect(url_for('stock_levels'))
         query = query.filter_by(branchid=branch_id)
     
     if low_stock:
@@ -895,8 +1023,8 @@ def stock_levels():
         page=page, per_page=20, error_out=False
     )
     
-    # Get all branches for filter dropdown
-    branches = Branch.query.all()
+    # Get accessible branches for filter dropdown
+    branches = get_user_accessible_branches()
     
     return render_template('stock_levels.html', 
                          products=products, 
@@ -920,6 +1048,11 @@ def stock_adjustment():
             return redirect(url_for('stock_adjustment'))
         
         product = Product.query.get_or_404(product_id)
+        
+        # Check if user has access to this product's branch
+        if not current_user.has_branch_access(product.branchid):
+            flash('Access denied. You do not have permission to adjust stock for this product.', 'error')
+            return redirect(url_for('stock_adjustment'))
         
         try:
             previous_stock = product.stock or 0
@@ -958,8 +1091,12 @@ def stock_adjustment():
             flash(f'Failed to adjust stock: {str(e)}', 'error')
             print(f"Error adjusting stock: {str(e)}")
     
-    # Get all products for the form
-    products = Product.query.order_by(Product.name).all()
+    # Get accessible products for the form
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    products_query = Product.query
+    if accessible_branch_ids:
+        products_query = products_query.filter(Product.branchid.in_(accessible_branch_ids))
+    products = products_query.order_by(Product.name).all()
     
     return render_template('stock_adjustment.html', products=products)
 @app.route('/payment/<int:payment_id>/receipt/preview')
@@ -967,6 +1104,12 @@ def stock_adjustment():
 def receipt_preview(payment_id):
     """Show receipt preview page"""
     payment = Payment.query.get_or_404(payment_id)
+    
+    # Check if user has access to this payment's order branch
+    if not current_user.has_branch_access(payment.order.branchid):
+        flash('Access denied. You do not have permission to view this receipt.', 'error')
+        return redirect(url_for('payments'))
+    
     return render_template('receipt_preview.html', payment=payment)
 
 @app.route('/payment/<int:payment_id>/receipt')
@@ -983,6 +1126,11 @@ def generate_receipt(payment_id, action='view'):
     import os
 
     payment = Payment.query.get_or_404(payment_id)
+    
+    # Check if user has access to this payment's order branch
+    if not current_user.has_branch_access(payment.order.branchid):
+        flash('Access denied. You do not have permission to generate this receipt.', 'error')
+        return redirect(url_for('payments'))
 
     def format_currency(amount):
         return f"KSh{amount:,.2f}"
