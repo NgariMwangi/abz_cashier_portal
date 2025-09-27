@@ -108,7 +108,7 @@
                                     <span class="text-muted">{{ order.branch.name if order.branch else 'N/A' }}</span>
                                 </td>
                                 <td>
-                                    <strong class="text-primary">KSH {{ order.total_amount|default('0.00') }}</strong>
+                                    <strong class="text-primary">KSH {{ "{:,.2f}".format(order.total_amount|default(0)|float) }}</strong>
                                 </td>
                                 <td>
                                     {% if order.approvalstatus %}

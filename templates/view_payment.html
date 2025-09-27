@@ -62,7 +62,7 @@
                             </tr>
                             <tr>
                                 <td class="fw-bold">Amount:</td>
-                                <td class="h5 text-primary mb-0">KSH {{ payment.amount }}</td>
+                                <td class="h5 text-primary mb-0">KSH {{ "{:,.2f}".format(payment.amount) }}</td>
                             </tr>
                             <tr>
                                 <td class="fw-bold">Status:</td>
@@ -184,7 +184,7 @@
                         <table class="table table-borderless">
                             <tr>
                                 <td class="fw-bold">Order Total:</td>
-                                <td class="h6 text-primary mb-0">KSH {{ payment.order.total_amount|default('0.00') }}</td>
+                                <td class="h6 text-primary mb-0">KSH {{ "{:,.2f}".format(payment.order.total_amount|default(0)|float) }}</td>
                             </tr>
                             <tr>
                                 <td class="fw-bold">Order Date:</td>

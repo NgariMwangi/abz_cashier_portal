@@ -1,12 +1,13 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User, Branch, Product, Order, OrderItem, Payment, StockTransaction, Supplier, PurchaseOrder, PurchaseOrderItem, Quotation, QuotationItem, SubCategory
+from models import db, User, Branch, ProductCatalog, BranchProduct, Order, OrderItem, Payment, StockTransaction, Supplier, PurchaseOrder, PurchaseOrderItem, Quotation, QuotationItem, SubCategory
 from datetime import datetime, timedelta
 import os
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from functools import wraps
+from decimal import Decimal
 app = Flask(__name__)
 
 # Branch access control helper functions
@@ -193,18 +194,43 @@ def dashboard():
         total_amount = 0
         if order.order_items:
             for item in order.order_items:
-                price = item.final_price or item.original_price or 0
-                total_amount += item.quantity * price
+                price = float(item.final_price or item.original_price or 0)
+                total_amount += float(item.quantity) * price
         order.total_amount = total_amount
         
         # Calculate payment status
         if total_amount == 0:
             order.payment_status = 'No Items'
         else:
+            # Get all payments for this order to debug
+            all_payments = Payment.query.filter_by(orderid=order.id).all()
+            completed_payments = Payment.query.filter_by(orderid=order.id, payment_status='completed').all()
+            
+            # Calculate total payments using func.sum
             total_payments = db.session.query(func.sum(Payment.amount)).filter(
                 Payment.orderid == order.id,
                 Payment.payment_status == 'completed'
             ).scalar() or 0
+            
+            # Manual calculation as backup
+            manual_total = 0
+            for payment in completed_payments:
+                if payment.amount:
+                    manual_total += float(payment.amount)
+            
+            # Convert total_payments to float for comparison
+            total_payments_float = float(total_payments) if total_payments else 0.0
+            
+            # Use manual calculation if there's a discrepancy
+            if abs(manual_total - total_payments_float) > 0.01:
+                total_payments = manual_total
+            else:
+                total_payments = total_payments_float
+            
+            # Debug output
+            print(f"Debug Dashboard - Order {order.id}: Total amount: {total_amount}, Total payments: {total_payments}")
+            print(f"Debug Dashboard - Order {order.id}: All payments: {[p.id for p in all_payments]}")
+            print(f"Debug Dashboard - Order {order.id}: Completed payments: {[p.id for p in completed_payments]}")
             
             # Convert to float for comparison
             total_payments_float = float(total_payments) if total_payments else 0.0
@@ -217,12 +243,7 @@ def dashboard():
             else:
                 order.payment_status = 'Unpaid'
     
-    # Get payment counts (filtered by accessible branches)
-    completed_payments_query = Payment.query.join(Order).filter_by(payment_status='completed')
-    if accessible_branch_ids:
-        completed_payments_query = completed_payments_query.filter(Order.branchid.in_(accessible_branch_ids))
-    completed_payments_count = completed_payments_query.count()
-    
+    # Get failed payments count (filtered by accessible branches)
     failed_payments_query = Payment.query.join(Order).filter_by(payment_status='failed')
     if accessible_branch_ids:
         failed_payments_query = failed_payments_query.filter(Order.branchid.in_(accessible_branch_ids))
@@ -234,7 +255,6 @@ def dashboard():
                          pending_payments_count=pending_payments_count,
                          today_revenue=today_revenue,
                          recent_orders=recent_orders,
-                         completed_payments_count=completed_payments_count,
                          failed_payments_count=failed_payments_count)
 
 
@@ -276,8 +296,8 @@ def orders():
         total_amount = 0
         if order.order_items:
             for item in order.order_items:
-                price = item.final_price or item.original_price or 0
-                total_amount += item.quantity * price
+                price = float(item.final_price or item.original_price or 0)
+                total_amount += float(item.quantity) * price
         order.total_amount = total_amount
         
         # Calculate payment status
@@ -333,7 +353,7 @@ def view_order(order_id):
     from sqlalchemy import func
     
     order = Order.query.options(
-        db.joinedload(Order.order_items).joinedload(OrderItem.product).joinedload(Product.sub_category).joinedload(SubCategory.category)
+        db.joinedload(Order.order_items).joinedload(OrderItem.branch_product).joinedload(BranchProduct.catalog_product)
     ).get_or_404(order_id)
     
     # Check if user has access to this order's branch
@@ -345,8 +365,8 @@ def view_order(order_id):
     total_amount = 0
     if order.order_items:
         for item in order.order_items:
-            price = item.final_price or item.original_price or 0
-            total_amount += item.quantity * price
+            price = float(item.final_price or item.original_price or 0)
+            total_amount += float(item.quantity) * price
     
     # Calculate total payments for this order
     payments_sum_query = db.session.query(func.sum(Payment.amount)).filter(
@@ -425,8 +445,8 @@ def view_order(order_id):
     try:
         return render_template('view_order.html', 
                              order=order, 
-                             total_amount=total_amount,
-                             total_payments=total_payments,
+                             total_amount=float(total_amount),
+                             total_payments=float(total_payments),
                              is_fully_paid=is_fully_paid,
                              remaining_amount=remaining_amount,
                              payment_status=payment_status)
@@ -461,19 +481,20 @@ def approve_order(order_id):
     
     for item in order.order_items:
         # Handle both regular products and manual items
-        if item.productid:
-            product = Product.query.get(item.productid)
-            if not product:
-                missing_products.append(f"Product ID {item.productid}")
+        if item.branch_productid:
+            branch_product = BranchProduct.query.get(item.branch_productid)
+            if not branch_product:
+                missing_products.append(f"Branch Product ID {item.branch_productid}")
                 continue
             
             # Warn about low stock but don't block approval
-            if product.stock is not None and product.stock < item.quantity:
+            if branch_product.stock is not None and Decimal(str(branch_product.stock)) < Decimal(str(item.quantity)):
+                product_name = branch_product.catalog_product.name if branch_product.catalog_product else "Unknown Product"
                 low_stock_warnings.append({
-                    'name': product.name,
-                    'available': product.stock,
-                    'requested': item.quantity,
-                    'shortage': item.quantity - product.stock
+                    'name': product_name,
+                    'available': float(branch_product.stock),
+                    'requested': float(item.quantity),
+                    'shortage': float(Decimal(str(item.quantity)) - Decimal(str(branch_product.stock)))
                 })
         else:
             # This is a manual item without a product relationship
@@ -498,31 +519,32 @@ def approve_order(order_id):
         
         # Reduce stock quantities and create stock transactions (only for products with valid relationships)
         for item in order.order_items:
-            if item.productid:
-                product = Product.query.get(item.productid)
-                if product:
-                    previous_stock = product.stock or 0
-                    new_stock = previous_stock - item.quantity
+            if item.branch_productid:
+                branch_product = BranchProduct.query.get(item.branch_productid)
+                if branch_product:
+                    previous_stock = Decimal(str(branch_product.stock or 0))
+                    quantity_decimal = Decimal(str(item.quantity))
+                    new_stock = previous_stock - quantity_decimal
                     
-                    # Update product stock (can go negative for backorders)
-                    product.stock = new_stock
+                    # Update branch product stock (can go negative for backorders)
+                    branch_product.stock = new_stock
                     
                     # Create stock transaction record
                     stock_transaction = StockTransaction(
-                        productid=item.productid,
+                        branch_productid=item.branch_productid,
                         userid=current_user.id,
                         transaction_type='remove',
                         quantity=item.quantity,
                         previous_stock=previous_stock,
                         new_stock=new_stock,
-                        notes=f'Stock reduced due to order #{order.id} approval (Backorder: {item.quantity - previous_stock if previous_stock < item.quantity else 0} units)'
+                        notes=f'Stock reduced due to order #{order.id} approval (Backorder: {float(quantity_decimal - previous_stock) if previous_stock < quantity_decimal else 0} units)'
                     )
                     db.session.add(stock_transaction)
                 else:
-                    # Product not found - skip stock transaction (no product to track)
+                    # Branch product not found - skip stock transaction (no product to track)
                     pass
             else:
-                # Manual item without product ID - skip stock transaction (no product to track)
+                # Manual item without branch product ID - skip stock transaction (no product to track)
                 pass
         
         db.session.commit()
@@ -567,18 +589,19 @@ def cancel_order(order_id):
         
         # Restore stock quantities and create stock transactions (only for products with valid relationships)
         for item in order.order_items:
-            if item.productid:
-                product = Product.query.get(item.productid)
-                if product:
-                    previous_stock = product.stock or 0
-                    new_stock = previous_stock + item.quantity
+            if item.branch_productid:
+                branch_product = BranchProduct.query.get(item.branch_productid)
+                if branch_product:
+                    previous_stock = Decimal(str(branch_product.stock or 0))
+                    quantity_decimal = Decimal(str(item.quantity))
+                    new_stock = previous_stock + quantity_decimal
                     
-                    # Update product stock
-                    product.stock = new_stock
+                    # Update branch product stock
+                    branch_product.stock = new_stock
                     
                     # Create stock transaction record for restoration
                     stock_transaction = StockTransaction(
-                        productid=item.productid,
+                        branch_productid=item.branch_productid,
                         userid=current_user.id,
                         transaction_type='add',
                         quantity=item.quantity,
@@ -588,10 +611,10 @@ def cancel_order(order_id):
                     )
                     db.session.add(stock_transaction)
                 else:
-                    # Product not found - skip stock transaction (no product to track)
+                    # Branch product not found - skip stock transaction (no product to track)
                     pass
             else:
-                # Manual item without product ID - skip stock transaction (no product to track)
+                # Manual item without branch product ID - skip stock transaction (no product to track)
                 pass
         
         db.session.commit()
@@ -641,8 +664,8 @@ def process_payment_from_order(order_id):
             total_amount = 0
             if order.order_items:
                 for item in order.order_items:
-                    price = item.final_price or item.original_price or 0
-                    total_amount += item.quantity * price
+                    price = float(item.final_price or item.original_price or 0)
+                    total_amount += float(item.quantity) * price
             
             # Calculate total payments for this order (excluding the new payment being created)
             existing_payments = db.session.query(func.sum(Payment.amount)).filter(
@@ -716,8 +739,8 @@ def process_payment_from_order(order_id):
     total_amount = 0
     if order.order_items:
         for item in order.order_items:
-            price = item.final_price or item.original_price or 0
-            total_amount += item.quantity * price
+            price = float(item.final_price or item.original_price or 0)
+            total_amount += float(item.quantity) * price
     
     # Calculate total payments for this order
     total_payments = db.session.query(func.sum(Payment.amount)).filter(
@@ -726,12 +749,12 @@ def process_payment_from_order(order_id):
     ).scalar() or 0
     
     # Calculate remaining amount
-    remaining_amount = max(0, total_amount - total_payments)
+    remaining_amount = max(0, float(total_amount) - float(total_payments))
     
     return render_template('process_payment.html', 
                          order=order, 
-                         total_amount=total_amount,
-                         total_payments=total_payments,
+                         total_amount=float(total_amount),
+                         total_payments=float(total_payments),
                          remaining=remaining_amount)
 
 # Payment Management Routes
@@ -776,8 +799,8 @@ def view_payment(payment_id):
         total_amount = 0
         if payment.order.order_items:
             for item in payment.order.order_items:
-                price = item.final_price or item.original_price or 0
-                total_amount += item.quantity * price
+                price = float(item.final_price or item.original_price or 0)
+                total_amount += float(item.quantity) * price
         payment.order.total_amount = total_amount
     
     return render_template('view_payment.html', payment=payment)
@@ -805,8 +828,8 @@ def process_payment(payment_id):
             total_amount = 0
             if payment.order.order_items:
                 for item in payment.order.order_items:
-                    price = item.final_price or item.original_price or 0
-                    total_amount += item.quantity * price
+                    price = float(item.final_price or item.original_price or 0)
+                    total_amount += float(item.quantity) * price
             
             # Calculate total payments for this order
             total_payments = db.session.query(func.sum(Payment.amount)).filter(
@@ -915,12 +938,15 @@ def daily_sales_details(date):
                 # Get order items
                 order_items = []
                 for item in order.order_items:
-                    product_name = item.product.name if item.product else (item.product_name or 'Manual Item')
+                    if item.branch_product and item.branch_product.catalog_product:
+                        product_name = item.branch_product.catalog_product.name
+                    else:
+                        product_name = item.product_name or 'Manual Item'
                     order_items.append({
                         'product_name': product_name,
-                        'quantity': item.quantity,
+                        'quantity': float(item.quantity),
                         'unit_price': float(item.final_price or item.original_price or 0),
-                        'total_price': float(item.final_price or item.original_price or 0) * item.quantity
+                        'total_price': float(item.final_price or item.original_price or 0) * float(item.quantity)
                     })
                 
                 payment_details.append({
@@ -956,27 +982,27 @@ def stock_transactions():
     accessible_branch_ids = get_user_accessible_branch_ids()
     
     # Build query with branch filtering
-    query = StockTransaction.query.join(Product)
+    query = StockTransaction.query.join(BranchProduct)
     
     # Filter by accessible branches
     if accessible_branch_ids:
-        query = query.filter(Product.branchid.in_(accessible_branch_ids))
+        query = query.filter(BranchProduct.branchid.in_(accessible_branch_ids))
     
     if transaction_type != 'all':
         query = query.filter_by(transaction_type=transaction_type)
     
     if product_id:
-        query = query.filter_by(productid=product_id)
+        query = query.filter_by(branch_productid=product_id)
     
     # Get stock transactions with pagination
     transactions = query.order_by(StockTransaction.created_at.desc()).paginate(
         page=page, per_page=20, error_out=False
     )
     
-    # Get all products for filter dropdown (filtered by accessible branches)
-    products_query = Product.query
+    # Get all branch products for filter dropdown (filtered by accessible branches)
+    products_query = BranchProduct.query
     if accessible_branch_ids:
-        products_query = products_query.filter(Product.branchid.in_(accessible_branch_ids))
+        products_query = products_query.filter(BranchProduct.branchid.in_(accessible_branch_ids))
     products = products_query.all()
     
     return render_template('stock_transactions.html', 
@@ -997,11 +1023,11 @@ def stock_levels():
     accessible_branch_ids = get_user_accessible_branch_ids()
     
     # Build query with branch filtering
-    query = Product.query
+    query = BranchProduct.query
     
     # Filter by accessible branches
     if accessible_branch_ids:
-        query = query.filter(Product.branchid.in_(accessible_branch_ids))
+        query = query.filter(BranchProduct.branchid.in_(accessible_branch_ids))
     
     if branch_id:
         # Also check if user has access to the requested branch
@@ -1011,15 +1037,15 @@ def stock_levels():
         query = query.filter_by(branchid=branch_id)
     
     if low_stock:
-        query = query.filter(Product.stock < 10)  # Show products with less than 10 in stock
+        query = query.filter(BranchProduct.stock < Decimal('10.000'))  # Show products with less than 10 in stock
     
     # Add backorder filter option
     backorder = request.args.get('backorder', type=bool)
     if backorder:
-        query = query.filter(Product.stock < 0)  # Show products with negative stock (backorders)
+        query = query.filter(BranchProduct.stock < Decimal('0.000'))  # Show products with negative stock (backorders)
     
     # Get products with pagination
-    products = query.order_by(Product.name).paginate(
+    products = query.order_by(BranchProduct.catalog_product.has(ProductCatalog.name)).paginate(
         page=page, per_page=20, error_out=False
     )
     
@@ -1040,35 +1066,36 @@ def stock_adjustment():
     if request.method == 'POST':
         product_id = request.form.get('product_id', type=int)
         adjustment_type = request.form.get('adjustment_type')  # 'add' or 'remove'
-        quantity = request.form.get('quantity', type=int)
+        quantity = request.form.get('quantity', type=float)
         notes = request.form.get('notes', '')
         
         if not product_id or not adjustment_type or not quantity or quantity <= 0:
             flash('Please fill in all required fields with valid values.', 'error')
             return redirect(url_for('stock_adjustment'))
         
-        product = Product.query.get_or_404(product_id)
+        branch_product = BranchProduct.query.get_or_404(product_id)
         
         # Check if user has access to this product's branch
-        if not current_user.has_branch_access(product.branchid):
+        if not current_user.has_branch_access(branch_product.branchid):
             flash('Access denied. You do not have permission to adjust stock for this product.', 'error')
             return redirect(url_for('stock_adjustment'))
         
         try:
-            previous_stock = product.stock or 0
+            previous_stock = Decimal(str(branch_product.stock or 0))
+            quantity_decimal = Decimal(str(quantity))
             
             if adjustment_type == 'add':
-                new_stock = previous_stock + quantity
+                new_stock = previous_stock + quantity_decimal
             else:  # remove
                 # Allow negative stock for backorders
-                new_stock = previous_stock - quantity
+                new_stock = previous_stock - quantity_decimal
             
-            # Update product stock
-            product.stock = new_stock
+            # Update branch product stock
+            branch_product.stock = new_stock
             
             # Create stock transaction record
             stock_transaction = StockTransaction(
-                productid=product_id,
+                branch_productid=product_id,
                 userid=current_user.id,
                 transaction_type=adjustment_type,
                 quantity=quantity,
@@ -1084,7 +1111,8 @@ def stock_adjustment():
             stock_status = f"New stock level: {new_stock}"
             if new_stock < 0:
                 stock_status += f" (Backorder: {abs(new_stock)} units)"
-            flash(f'Successfully {action} stock for {product.name}. {stock_status}', 'success')
+            product_name = branch_product.catalog_product.name if branch_product.catalog_product else "Unknown Product"
+            flash(f'Successfully {action} stock for {product_name}. {stock_status}', 'success')
             
         except Exception as e:
             db.session.rollback()
@@ -1093,10 +1121,10 @@ def stock_adjustment():
     
     # Get accessible products for the form
     accessible_branch_ids = get_user_accessible_branch_ids()
-    products_query = Product.query
+    products_query = BranchProduct.query
     if accessible_branch_ids:
-        products_query = products_query.filter(Product.branchid.in_(accessible_branch_ids))
-    products = products_query.order_by(Product.name).all()
+        products_query = products_query.filter(BranchProduct.branchid.in_(accessible_branch_ids))
+    products = products_query.order_by(BranchProduct.catalog_product.has(ProductCatalog.name)).all()
     
     return render_template('stock_adjustment.html', products=products)
 @app.route('/payment/<int:payment_id>/receipt/preview')
@@ -1203,10 +1231,13 @@ def generate_receipt(payment_id, action='view'):
 
         data = [["Product", "Qty", "Price", "Total"]]
         for item in order.order_items:
-            price = item.final_price or item.original_price or 0
-            total = item.quantity * price
+            price = float(item.final_price or item.original_price or 0)
+            total = float(item.quantity) * price
             # Use product_name from orderdetails if product relationship is null
-            product_name = item.product.name if item.product else (item.product_name or "N/A")
+            if item.branch_product and item.branch_product.catalog_product:
+                product_name = item.branch_product.catalog_product.name
+            else:
+                product_name = item.product_name or "N/A"
 
             # Wrapping for product names
             data.append([
@@ -1230,7 +1261,7 @@ def generate_receipt(payment_id, action='view'):
         story.append(Spacer(1, 6))
 
         # Total
-        total_amount = sum(item.quantity * (item.final_price or item.original_price or 0) for item in order.order_items)
+        total_amount = sum(float(item.quantity) * float(item.final_price or item.original_price or 0) for item in order.order_items)
         story.append(Paragraph(f"<b>TOTAL: {format_currency(total_amount)}</b>", header_style))
         story.append(Spacer(1, 10))
 

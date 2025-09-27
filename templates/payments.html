@@ -112,7 +112,7 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <strong class="text-primary">KSH {{ payment.amount }}</strong>
+                                    <strong class="text-primary">KSH {{ "{:,.2f}".format(payment.amount) }}</strong>
                                 </td>
                                 <td>
                                     {% if payment.payment_method == 'cash' %}

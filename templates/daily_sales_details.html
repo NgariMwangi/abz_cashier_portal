@@ -35,7 +35,7 @@
                             Total Revenue
                         </div>
                         <div class="h3 mb-0 font-weight-bold text-primary">
-                            KSH {{ total_revenue|round(2) }}
+                            KSH {{ "{:,.2f}".format(total_revenue|round(2)) }}
                         </div>
                         <div class="text-xs text-muted">For {{ date.strftime('%B %d, %Y') }}</div>
                     </div>
@@ -77,7 +77,7 @@
                             Average Revenue
                         </div>
                         <div class="h3 mb-0 font-weight-bold text-info">
-                            KSH {{ (total_revenue / total_payments)|round(2) if total_payments > 0 else 0 }}
+                            KSH {{ "{:,.2f}".format((total_revenue / total_payments)|round(2) if total_payments > 0 else 0) }}
                         </div>
                         <div class="text-xs text-muted">Per payment</div>
                     </div>
@@ -109,7 +109,7 @@
                                 <div class="d-flex justify-content-between align-items-center w-100 me-3">
                                     <div>
                                         <strong>Payment #{{ detail.payment.id }}</strong> - 
-                                        <span class="text-success">KSH {{ detail.payment.amount }}</span>
+                                        <span class="text-success">KSH {{ "{:,.2f}".format(detail.payment.amount) }}</span>
                                     </div>
                                     <div class="text-muted">
                                         <small>{{ detail.payment_time|east_africa_time|strftime('%H:%M') }}</small>
@@ -130,7 +130,7 @@
                                     </div>
                                     <div class="col-md-6">
                                         <h6>Payment Details</h6>
-                                        <p class="mb-1"><strong>Amount:</strong> KSH {{ detail.payment.amount }}</p>
+                                        <p class="mb-1"><strong>Amount:</strong> KSH {{ "{:,.2f}".format(detail.payment.amount) }}</p>
                                         <p class="mb-1"><strong>Reference:</strong> {{ detail.payment.reference_number or 'N/A' }}</p>
                                         <p class="mb-1"><strong>Time:</strong> {{ detail.payment_time|east_africa_time|strftime('%H:%M:%S') }}</p>
                                     </div>
@@ -152,15 +152,15 @@
                                             <tr>
                                                 <td>{{ item.product_name }}</td>
                                                 <td>{{ item.quantity }}</td>
-                                                <td>KSH {{ item.unit_price|round(2) }}</td>
-                                                <td>KSH {{ item.total_price|round(2) }}</td>
+                                                <td>KSH {{ "{:,.2f}".format(item.unit_price|round(2)) }}</td>
+                                                <td>KSH {{ "{:,.2f}".format(item.total_price|round(2)) }}</td>
                                             </tr>
                                             {% endfor %}
                                         </tbody>
                                         <tfoot class="table-light">
                                             <tr>
                                                 <td colspan="3" class="text-end fw-bold">Order Total:</td>
-                                                <td class="fw-bold">KSH {{ detail.payment.amount }}</td>
+                                                <td class="fw-bold">KSH {{ "{:,.2f}".format(detail.payment.amount) }}</td>
                                             </tr>
                                         </tfoot>
                                     </table>

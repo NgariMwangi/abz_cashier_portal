@@ -68,17 +68,17 @@
                 </div>
                 <hr>
                 <div class="text-center">
-                    <h4 class="text-primary mb-0">KSH {{ total_amount|default('0.00') }}</h4>
+                    <h4 class="text-primary mb-0">KSH {{ "{:,.2f}".format(total_amount|default(0)|float) }}</h4>
                     <small class="text-muted">Order Total</small>
                 </div>
                 {% if total_payments and total_payments > 0 %}
                 <hr>
                 <div class="text-center">
-                    <h6 class="text-success mb-0">KSH {{ total_payments|default('0.00') }}</h6>
+                    <h6 class="text-success mb-0">KSH {{ "{:,.2f}".format(total_payments|default(0)|float) }}</h6>
                     <small class="text-muted">Already Paid</small>
                 </div>
                 <div class="text-center mt-2">
-                    <h6 class="text-warning mb-0">KSH {{ (total_amount - total_payments)|default('0.00') }}</h6>
+                    <h6 class="text-warning mb-0">KSH {{ "{:,.2f}".format((total_amount - total_payments)|default(0)|float) }}</h6>
                     <small class="text-muted">Remaining Amount</small>
                 </div>
                 {% endif %}
@@ -109,7 +109,7 @@
                         <div class="row">
                             <div class="col-6">
                                 <small class="text-muted">Amount</small>
-                                <div class="fw-bold">KSH {{ payment.amount }}</div>
+                                <div class="fw-bold">KSH {{ "{:,.2f}".format(payment.amount) }}</div>
                             </div>
                             <div class="col-6">
                                 <small class="text-muted">Method</small>
@@ -154,9 +154,9 @@
                                    name="amount" 
                                    step="0.01" 
                                    min="0.01" 
-                                   value="{{ total_amount|default('0.00') }}"
+                                   value="{{ remaining|default('0.00') }}"
                                    required>
-                            <div class="form-text">Enter the amount to be paid</div>
+                            <div class="form-text">Amount defaults to remaining balance. Adjust as needed.</div>
                         </div>
                         
                         <div class="col-md-6 mb-3">
@@ -197,8 +197,8 @@
                         {% if remaining > 0 %}
                             <div class="alert alert-warning">
                                 <i class="fas fa-exclamation-triangle me-2"></i>
-                                <strong>Partial Payment:</strong> This order has KSH {{ total_payments }} already paid. 
-                                Remaining amount: KSH {{ remaining }}. 
+                                <strong>Partial Payment:</strong> This order has KSH {{ "{:,.2f}".format(total_payments|float) }} already paid. 
+                                Remaining amount: KSH {{ "{:,.2f}".format(remaining|float) }}. 
                                 <div id="payment-completion-status" style="display: none;">
                                     <strong class="text-success">This payment will complete the order!</strong>
                                 </div>
@@ -206,7 +206,7 @@
                         {% else %}
                             <div class="alert alert-success">
                                 <i class="fas fa-check-circle me-2"></i>
-                                <strong>Order Already Paid:</strong> This order has been fully paid (KSH {{ total_payments }}).
+                                <strong>Order Already Paid:</strong> This order has been fully paid (KSH {{ "{:,.2f}".format(total_payments|float) }}).
                             </div>
                         {% endif %}
                     {% else %}

@@ -70,7 +70,7 @@
                             Total Revenue
                         </div>
                         <div class="h3 mb-0 font-weight-bold text-primary">
-                            KSH {{ total_revenue|default(0) }}
+                            KSH {{ "{:,.2f}".format(total_revenue|default(0)) }}
                         </div>
                         <div class="text-xs text-muted">{{ start_date }} to {{ end_date }}</div>
                     </div>
@@ -112,7 +112,7 @@
                             Average Revenue
                         </div>
                         <div class="h3 mb-0 font-weight-bold text-info">
-                            KSH {{ (total_revenue / total_payments)|round(2) if total_payments > 0 else 0 }}
+                            KSH {{ "{:,.2f}".format((total_revenue / total_payments)|round(2) if total_payments > 0 else 0) }}
                         </div>
                         <div class="text-xs text-muted">Per payment</div>
                     </div>
@@ -183,10 +183,10 @@
                                     <span class="badge bg-primary">{{ row.payment_count }}</span>
                                 </td>
                                 <td>
-                                    <strong class="text-success">KSH {{ row.total_amount|default(0) }}</strong>
+                                    <strong class="text-success">KSH {{ "{:,.2f}".format(row.total_amount|default(0)) }}</strong>
                                 </td>
                                 <td>
-                                    <span class="text-muted">KSH {{ (row.total_amount / row.payment_count)|round(2) if row.payment_count > 0 else 0 }}</span>
+                                    <span class="text-muted">KSH {{ "{:,.2f}".format((row.total_amount / row.payment_count)|round(2) if row.payment_count > 0 else 0) }}</span>
                                 </td>
                                 <td>
                                     <a href="{{ url_for('daily_sales_details', date=row.date.strftime('%Y-%m-%d')) }}" class="btn btn-sm btn-outline-primary">
@@ -200,8 +200,8 @@
                             <tr>
                                 <td class="fw-bold">TOTAL</td>
                                 <td><span class="badge bg-primary">{{ total_payments }}</span></td>
-                                <td><strong class="text-success">KSH {{ total_revenue }}</strong></td>
-                                <td><span class="text-muted">KSH {{ (total_revenue / total_payments)|round(2) if total_payments > 0 else 0 }}</span></td>
+                                <td><strong class="text-success">KSH {{ "{:,.2f}".format(total_revenue) }}</strong></td>
+                                <td><span class="text-muted">KSH {{ "{:,.2f}".format((total_revenue / total_payments)|round(2) if total_payments > 0 else 0) }}</span></td>
                                 <td></td>
                             </tr>
                         </tfoot>

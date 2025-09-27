@@ -37,7 +37,7 @@
 
 <div class="row">
     <!-- Order Statistics -->
-    <div class="col-md-3 mb-4">
+    <div class="col-md-4 mb-4">
         <div class="card border-left-warning shadow h-100">
             <div class="card-body">
                 <div class="row no-gutters align-items-center">
@@ -58,7 +58,7 @@
         </div>
     </div>
 
-    <div class="col-md-3 mb-4">
+    <div class="col-md-4 mb-4">
         <div class="card border-left-success shadow h-100">
             <div class="card-body">
                 <div class="row no-gutters align-items-center">
@@ -79,28 +79,7 @@
         </div>
     </div>
 
-    <div class="col-md-3 mb-4">
-        <div class="card border-left-success shadow h-100">
-            <div class="card-body">
-                <div class="row no-gutters align-items-center">
-                    <div class="col mr-2">
-                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
-                            Completed Payments
-                        </div>
-                        <div class="h3 mb-0 font-weight-bold text-success">
-                            {{ completed_payments_count|default(0) }}
-                        </div>
-                        <div class="text-xs text-muted">Total payments</div>
-                    </div>
-                    <div class="col-auto">
-                        <i class="fas fa-check-circle fa-2x text-success"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-md-3 mb-4">
+    <div class="col-md-4 mb-4">
         <div class="card border-left-primary shadow h-100">
             <div class="card-body">
                 <div class="row no-gutters align-items-center">
@@ -109,7 +88,7 @@
                             Today's Revenue
                         </div>
                         <div class="h3 mb-0 font-weight-bold text-primary">
-                            KSH {{ today_revenue|default(0) }}
+                            KSH {{ "{:,.0f}".format(today_revenue|default(0)|float) }}
                         </div>
                         <div class="text-xs text-muted">Total collected</div>
                     </div>
@@ -181,7 +160,7 @@
                             <tr>
                                 <td><strong>#{{ order.id }}</strong></td>
                                 <td>{{ order.user.firstname }} {{ order.user.lastname }}</td>
-                                <td>KSH {{ order.total_amount|default('0.00') }}</td>
+                                <td>KSH {{ "{:,.0f}".format(order.total_amount|default(0)|float) }}</td>
                                 <td>
                                     {% if order.approvalstatus %}
                                         <span class="badge bg-success">Approved</span>
@@ -190,29 +169,20 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if order.total_amount and order.total_amount > 0 %}
-                                        {% set total_payments = 0 %}
-                                        {% if order.payments %}
-                                            {% for payment in order.payments %}
-                                                {% if payment.payment_status == 'completed' %}
-                                                    {% set total_payments = total_payments + payment.amount %}
-                                                {% endif %}
-                                            {% endfor %}
-                                        {% endif %}
-                                        
-                                        {% if total_payments >= order.total_amount %}
-                                            <span class="badge bg-success">
-                                                <i class="fas fa-check me-1"></i>Fully Paid
-                                            </span>
-                                        {% elif total_payments > 0 %}
-                                            <span class="badge bg-warning">
-                                                <i class="fas fa-clock me-1"></i>Partially Paid
-                                            </span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">
-                                                <i class="fas fa-times me-1"></i>Unpaid
-                                            </span>
-                                        {% endif %}
+                                    {% if order.payment_status == 'Fully Paid' %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check me-1"></i>Fully Paid
+                                        </span>
+                                    {% elif order.payment_status == 'Partially Paid' %}
+                                        <span class="badge bg-warning">
+                                            <i class="fas fa-clock me-1"></i>Partially Paid
+                                        </span>
+                                    {% elif order.payment_status == 'Unpaid' %}
+                                        <span class="badge bg-secondary">
+                                            <i class="fas fa-times me-1"></i>Unpaid
+                                        </span>
+                                    {% elif order.payment_status == 'No Items' %}
+                                        <span class="badge bg-secondary">No Items</span>
                                     {% else %}
                                         <span class="badge bg-secondary">N/A</span>
                                     {% endif %}
@@ -255,18 +225,11 @@
             </div>
             <div class="card-body">
                 <div class="row text-center">
-                    <div class="col-6 mb-3">
-                        <div class="border rounded p-3">
-                            <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
-                            <h4 class="text-success">{{ completed_payments_count|default(0) }}</h4>
-                            <p class="text-muted mb-0">Completed</p>
-                        </div>
-                    </div>
-                    <div class="col-6 mb-3">
+                    <div class="col-12 mb-3">
                         <div class="border rounded p-3">
                             <i class="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
                             <h4 class="text-warning">{{ failed_payments_count|default(0) }}</h4>
-                            <p class="text-muted mb-0">Failed</p>
+                            <p class="text-muted mb-0">Failed Payments</p>
                         </div>
                     </div>
                 </div>
