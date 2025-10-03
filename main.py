@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, Branch, ProductCatalog, BranchProduct, Order, OrderItem, Payment, StockTransaction, Supplier, PurchaseOrder, PurchaseOrderItem, Quotation, QuotationItem, SubCategory
@@ -949,11 +949,22 @@ def daily_sales_details(date):
                         'total_price': float(item.final_price or item.original_price or 0) * float(item.quantity)
                     })
                 
+                # Determine customer/sales person name based on order type
+                if order.ordertype and order.ordertype.name.lower() == 'walk-in':
+                    # For walk-in orders, show sales person name (user who created the order)
+                    display_name = f"{order.user.firstname} {order.user.lastname} (Sales Person)"
+                    name_type = "sales_person"
+                else:
+                    # For regular orders, show customer name
+                    display_name = f"{order.user.firstname} {order.user.lastname}"
+                    name_type = "customer"
+                
                 payment_details.append({
                     'payment': payment,
                     'order': order,
                     'order_items': order_items,
-                    'customer_name': f"{order.user.firstname} {order.user.lastname}",
+                    'customer_name': display_name,
+                    'name_type': name_type,
                     'payment_method': payment.payment_method,
                     'payment_time': payment.created_at
                 })
@@ -966,6 +977,553 @@ def daily_sales_details(date):
                              total_revenue=total_revenue,
                              total_payments=len(payments))
                              
+    except ValueError:
+        flash('Invalid date format', 'error')
+        return redirect(url_for('sales_report'))
+
+# PDF Export Route for Sales Report
+@app.route('/sales-report/export-pdf')
+@cashier_required
+def export_sales_report_pdf():
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    from io import BytesIO
+    from datetime import datetime, timedelta
+    
+    # Get date range from query parameters
+    start_date = request.args.get('start_date', (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
+    end_date = request.args.get('end_date', datetime.now().strftime('%Y-%m-%d'))
+    
+    # Convert to datetime objects
+    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+    end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+    
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Get sales data (same logic as sales_report route)
+    sales_data_query = db.session.query(
+        func.date(Payment.created_at).label('date'),
+        func.count(Payment.id).label('payment_count'),
+        func.sum(Payment.amount).label('total_amount')
+    ).join(Order).filter(
+        Payment.payment_status == 'completed',
+        Payment.created_at >= start_dt,
+        Payment.created_at < end_dt
+    )
+    
+    # Filter by accessible branches
+    if accessible_branch_ids:
+        sales_data_query = sales_data_query.filter(Order.branchid.in_(accessible_branch_ids))
+    
+    sales_data = sales_data_query.group_by(func.date(Payment.created_at)).order_by(func.date(Payment.created_at)).all()
+    
+    # Calculate totals
+    total_revenue = sum(row.total_amount for row in sales_data if row.total_amount)
+    total_payments = sum(row.payment_count for row in sales_data)
+    
+    # Create PDF
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+    story = []
+    
+    # Define styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        spaceAfter=30,
+        alignment=1,  # Center alignment
+        textColor=colors.darkblue
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=12,
+        textColor=colors.darkblue
+    )
+    
+    normal_style = styles['Normal']
+    
+    # Title
+    story.append(Paragraph("ABZ HARDWARE - DAILY SALES REPORT", title_style))
+    story.append(Spacer(1, 12))
+    
+    # Report period
+    story.append(Paragraph(f"<b>Report Period:</b> {start_date} to {end_date}", normal_style))
+    story.append(Paragraph(f"<b>Generated:</b> {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", normal_style))
+    story.append(Spacer(1, 20))
+    
+    # Summary section
+    story.append(Paragraph("SUMMARY", heading_style))
+    
+    summary_data = [
+        ['Total Revenue', f"KSH {total_revenue:,.2f}"],
+        ['Total Payments', f"{total_payments:,}"],
+        ['Average per Payment', f"KSH {(total_revenue / total_payments):,.2f}" if total_payments > 0 else "KSH 0.00"]
+    ]
+    
+    summary_table = Table(summary_data, colWidths=[2*inch, 2*inch])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.lightgrey),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    
+    story.append(summary_table)
+    story.append(Spacer(1, 20))
+    
+    # Detailed sales data
+    if sales_data:
+        story.append(Paragraph("DAILY SALES BREAKDOWN", heading_style))
+        
+        # Table headers
+        table_data = [['Date', 'Payments', 'Revenue (KSH)', 'Average (KSH)']]
+        
+        # Add sales data rows
+        for row in sales_data:
+            date_str = row.date.strftime('%B %d, %Y')
+            avg_amount = (row.total_amount / row.payment_count) if row.payment_count > 0 else 0
+            table_data.append([
+                date_str,
+                str(row.payment_count),
+                f"{row.total_amount:,.2f}",
+                f"{avg_amount:,.2f}"
+            ])
+        
+        # Add totals row
+        table_data.append([
+            'TOTAL',
+            str(total_payments),
+            f"{total_revenue:,.2f}",
+            f"{(total_revenue / total_payments):,.2f}" if total_payments > 0 else "0.00"
+        ])
+        
+        # Create table
+        sales_table = Table(table_data, colWidths=[2.5*inch, 1*inch, 1.5*inch, 1.5*inch])
+        sales_table.setStyle(TableStyle([
+            # Header row
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            
+            # Data rows
+            ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+            ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -2), 9),
+            ('BOTTOMPADDING', (0, 1), (-1, -2), 8),
+            
+            # Totals row
+            ('BACKGROUND', (0, -1), (-1, -1), colors.lightblue),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, -1), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, -1), (-1, -1), 12),
+            
+            # Grid
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(sales_table)
+    else:
+        story.append(Paragraph("No sales data available for the selected period.", normal_style))
+    
+    # Build PDF
+    doc.build(story)
+    buffer.seek(0)
+    
+    # Generate filename
+    filename = f"daily_sales_report_{start_date}_to_{end_date}.pdf"
+    
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/pdf'
+    )
+
+# PDF Export Route for Daily Sales Details
+@app.route('/sales-report/daily-details/<date>/export-pdf')
+@cashier_required
+def export_daily_sales_pdf(date):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    from io import BytesIO
+    from datetime import datetime
+    
+    try:
+        # Parse the date
+        date_obj = datetime.strptime(date, '%Y-%m-%d')
+        
+        # Get accessible branch IDs for current user
+        accessible_branch_ids = get_user_accessible_branch_ids()
+        
+        # Get branch information for the accessible branches
+        accessible_branches = current_user.get_accessible_branches()
+        branch_names = [branch.name for branch in accessible_branches]
+        
+        # Determine branch display name
+        if len(branch_names) == 1:
+            branch_display_name = branch_names[0]
+        elif len(branch_names) > 1:
+            branch_display_name = "All Branches"
+        else:
+            branch_display_name = "All Branches"
+        
+        # Get all payments for the specific date (filtered by accessible branches)
+        payments_query = db.session.query(Payment).join(Order).filter(
+            Payment.payment_status == 'completed',
+            func.date(Payment.created_at) == date_obj.date()
+        )
+        
+        # Filter by accessible branches
+        if accessible_branch_ids:
+            payments_query = payments_query.filter(Order.branchid.in_(accessible_branch_ids))
+        
+        payments = payments_query.order_by(Payment.created_at.desc()).all()
+        
+        # Get order details for each payment
+        payment_details = []
+        total_revenue = 0
+        
+        for payment in payments:
+            order = Order.query.get(payment.orderid)
+            if order:
+                # Get order items
+                order_items = []
+                for item in order.order_items:
+                    if item.branch_product and item.branch_product.catalog_product:
+                        product_name = item.branch_product.catalog_product.name
+                    else:
+                        product_name = item.product_name or 'Manual Item'
+                    order_items.append({
+                        'product_name': product_name,
+                        'quantity': float(item.quantity),
+                        'unit_price': float(item.final_price or item.original_price or 0),
+                        'total_price': float(item.final_price or item.original_price or 0) * float(item.quantity)
+                    })
+                
+                # Determine customer/sales person name based on order type
+                if order.ordertype and order.ordertype.name.lower() == 'walk-in':
+                    # For walk-in orders, show sales person name (user who created the order)
+                    display_name = f"{order.user.firstname} {order.user.lastname} (Sales Person)"
+                    name_type = "sales_person"
+                else:
+                    # For regular orders, show customer name
+                    display_name = f"{order.user.firstname} {order.user.lastname}"
+                    name_type = "customer"
+                
+                payment_details.append({
+                    'payment': payment,
+                    'order': order,
+                    'order_items': order_items,
+                    'customer_name': display_name,
+                    'name_type': name_type,
+                    'payment_method': payment.payment_method,
+                    'payment_time': payment.created_at,
+                    'branch_name': order.branch.name if order.branch else 'Unknown Branch'
+                })
+                
+                total_revenue += float(payment.amount)
+        
+        # Create PDF with better margins to match reference
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
+        story = []
+        
+        # Define styles to match reference PDF
+        styles = getSampleStyleSheet()
+        
+        # Company Header Styles - Matching reference format
+        company_title_style = ParagraphStyle(
+            'CompanyTitle',
+            parent=styles['Heading1'],
+            fontSize=28,
+            spaceAfter=8,
+            alignment=1,  # Center alignment
+            textColor=colors.darkblue,
+            fontName='Helvetica-Bold'
+        )
+        
+        company_subtitle_style = ParagraphStyle(
+            'CompanySubtitle',
+            parent=styles['Heading2'],
+            fontSize=16,
+            spaceAfter=25,
+            alignment=1,  # Center alignment
+            textColor=colors.darkblue,
+            fontName='Helvetica'
+        )
+        
+        # Report Title Style
+        report_title_style = ParagraphStyle(
+            'ReportTitle',
+            parent=styles['Heading1'],
+            fontSize=22,
+            spaceAfter=25,
+            alignment=1,  # Center alignment
+            textColor=colors.black,
+            fontName='Helvetica-Bold'
+        )
+        
+        # Report Details Style
+        report_details_style = ParagraphStyle(
+            'ReportDetails',
+            parent=styles['Normal'],
+            fontSize=12,
+            spaceAfter=5,
+            alignment=0,  # Left alignment
+            textColor=colors.black,
+            fontName='Helvetica'
+        )
+        
+        # Section Heading Style
+        heading_style = ParagraphStyle(
+            'SectionHeading',
+            parent=styles['Heading2'],
+            fontSize=16,
+            spaceAfter=15,
+            textColor=colors.darkblue,
+            fontName='Helvetica-Bold'
+        )
+        
+        # Normal text style
+        normal_style = styles['Normal']
+        
+        # Company Header - Matching reference format
+        story.append(Paragraph("ABZ HARDWARE LIMITED", company_title_style))
+        story.append(Paragraph("Your Trusted Hardware Partner", company_subtitle_style))
+        story.append(Spacer(1, 10))
+        
+        # Report Title
+        story.append(Paragraph("DAILY SALES REPORT", report_title_style))
+        
+        # Report details - Better formatting
+        story.append(Paragraph(f"Date: {date_obj.strftime('%A, %B %d, %Y')}", report_details_style))
+        story.append(Paragraph(f"Branch: {branch_display_name.upper()}", report_details_style))
+        # Get branch location if available
+        branch_location = accessible_branches[0].location if len(accessible_branches) == 1 else "Multiple Locations"
+        story.append(Paragraph(f"Location: {branch_location.upper()}", report_details_style))
+        story.append(Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", report_details_style))
+        story.append(Spacer(1, 25))
+        
+        # Calculate additional metrics
+        total_items_sold = len(set(item['product_name'] for detail in payment_details for item in detail['order_items']))
+        
+        # Calculate actual profit from final_price vs buying_price
+        total_profit = 0
+        total_cost = 0
+        for detail in payment_details:
+            for item in detail['order_items']:
+                # Get the final selling price and buying price from order items
+                final_price = item['unit_price']  # This comes from final_price in the data preparation
+                buying_price = 0
+                
+                # Get buying price from the actual order item
+                if detail['order'].order_items:
+                    for order_item in detail['order'].order_items:
+                        if order_item.buying_price:
+                            buying_price = float(order_item.buying_price)
+                            break
+                
+                # Calculate profit for this item: final_price - buying_price
+                if buying_price > 0:
+                    profit_per_unit = final_price - buying_price
+                    profit_for_item = profit_per_unit * item['quantity']
+                    total_profit += profit_for_item
+                    total_cost += buying_price * item['quantity']
+        
+        # If we couldn't calculate profit from actual prices, fall back to estimation
+        if total_profit == 0 and total_revenue > 0:
+            # Estimate 20% profit margin if no buying prices available
+            total_profit = total_revenue * 0.2
+        
+        # Summary section
+        story.append(Paragraph("SUMMARY", heading_style))
+        
+        summary_data = [
+            ['Metric', 'Value'],
+            ['Total Revenue', f"KSh {total_revenue:,.0f}"],
+            ['Total Payments', f"{len(payments):,}"],
+            ['Total Items Sold', f"{total_items_sold:,}"],
+            ['Total Profit', f"KSh {total_profit:,.0f}"]
+        ]
+        
+        summary_table = Table(summary_data, colWidths=[2.8*inch, 2.8*inch])
+        summary_table.setStyle(TableStyle([
+            # Header row - Enhanced styling
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 15),
+            ('TOPPADDING', (0, 0), (-1, 0), 15),
+            
+            # Data rows - Enhanced styling
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 11),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 12),
+            ('TOPPADDING', (0, 1), (-1, -1), 12),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),  # Metric names left aligned
+            ('ALIGN', (1, 1), (1, -1), 'CENTER'),  # Values center aligned
+            
+            # Grid - Enhanced styling
+            ('GRID', (0, 0), (-1, -1), 1.5, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
+        ]))
+        
+        story.append(summary_table)
+        story.append(Spacer(1, 20))
+        
+        # Payment Details Table
+        if payment_details:
+            story.append(Paragraph("PAYMENT DETAILS", heading_style))
+            
+            # Create payment details table
+            payment_table_data = [['Payment ID', 'Order ID', 'Amount', 'Method', 'Status', 'Time']]
+            for detail in payment_details:
+                payment_table_data.append([
+                    str(detail['payment'].id),
+                    str(detail['order'].id),
+                    f"KSh {detail['payment'].amount:,.0f}",
+                    detail['payment_method'],
+                    'completed',
+                    detail['payment_time'].strftime('%H:%M')
+                ])
+            
+            payment_table = Table(payment_table_data, colWidths=[1*inch, 1*inch, 1.5*inch, 1.5*inch, 1*inch, 1*inch])
+            payment_table.setStyle(TableStyle([
+                # Header row - Enhanced styling
+                ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('TOPPADDING', (0, 0), (-1, 0), 10),
+                
+                # Data rows - Enhanced styling
+                ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+                ('TOPPADDING', (0, 1), (-1, -1), 8),
+                
+                # Grid - Enhanced styling
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
+            ]))
+            
+            story.append(payment_table)
+            story.append(Spacer(1, 20))
+            
+            # Sold Items Table
+            story.append(Paragraph("SOLD ITEMS", heading_style))
+            
+            # Collect all items from all orders
+            all_items = []
+            for detail in payment_details:
+                for item in detail['order_items']:
+                    # Calculate actual profit from final_price vs buying_price
+                    final_price = item['unit_price']  # This comes from final_price in the data preparation
+                    buying_price = 0
+                    
+                    # Get buying price from the actual order item
+                    if detail['order'].order_items:
+                        for order_item in detail['order'].order_items:
+                            if order_item.buying_price:
+                                buying_price = float(order_item.buying_price)
+                                break
+                    
+                    # Calculate profit for this item: final_price - buying_price
+                    if buying_price > 0:
+                        profit_per_unit = final_price - buying_price
+                        profit = profit_per_unit * item['quantity']
+                    else:
+                        # Fall back to 20% estimation if no buying price available
+                        profit = item['total_price'] * 0.2
+                    
+                    all_items.append({
+                        'product_name': item['product_name'],
+                        'quantity': item['quantity'],
+                        'unit_price': item['unit_price'],
+                        'total_price': item['total_price'],
+                        'profit': profit
+                    })
+            
+            # Create sold items table
+            sold_items_data = [['Product', 'Quantity', 'Unit Price', 'Total', 'Profit']]
+            for item in all_items:
+                sold_items_data.append([
+                    item['product_name'],
+                    str(item['quantity']),
+                    f"KSh {item['unit_price']:,.0f}",
+                    f"KSh {item['total_price']:,.0f}",
+                    f"KSh {item['profit']:,.0f}"
+                ])
+            
+            sold_items_table = Table(sold_items_data, colWidths=[2.8*inch, 1*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+            sold_items_table.setStyle(TableStyle([
+                # Header row - Enhanced styling
+                ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('TOPPADDING', (0, 0), (-1, 0), 10),
+                
+                # Data rows - Enhanced styling
+                ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+                ('TOPPADDING', (0, 1), (-1, -1), 8),
+                ('ALIGN', (0, 1), (0, -1), 'LEFT'),  # Product names left aligned
+                ('ALIGN', (1, 1), (4, -1), 'CENTER'),  # Other columns center aligned
+                
+                # Grid - Enhanced styling
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
+            ]))
+            
+            story.append(sold_items_table)
+        else:
+            story.append(Paragraph("No payments found for this date.", normal_style))
+        
+        # Build PDF
+        doc.build(story)
+        buffer.seek(0)
+        
+        # Generate filename with the requested format
+        branch_slug = branch_display_name.lower().replace(' ', '_').replace('&', 'and')
+        filename = f"daily_sales_report_{branch_slug}_{date}.pdf"
+        
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/pdf'
+        )
+        
     except ValueError:
         flash('Invalid date format', 'error')
         return redirect(url_for('sales_report'))

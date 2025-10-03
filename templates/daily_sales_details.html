@@ -16,9 +16,9 @@
                 <a href="{{ url_for('sales_report') }}" class="btn btn-outline-secondary">
                     <i class="fas fa-arrow-left me-2"></i>Back to Sales Report
                 </a>
-                <button type="button" class="btn btn-success" onclick="exportDailyReport()">
-                    <i class="fas fa-download me-2"></i>Export Daily Report
-                </button>
+                <a href="{{ url_for('export_daily_sales_pdf', date=date.strftime('%Y-%m-%d')) }}" class="btn btn-success" target="_blank" onclick="showExportMessage()">
+                    <i class="fas fa-file-pdf me-2"></i>Export PDF
+                </a>
             </div>
         </div>
     </div>
@@ -121,9 +121,12 @@
                             <div class="accordion-body">
                                 <div class="row mb-3">
                                     <div class="col-md-6">
-                                        <h6>Customer Information</h6>
-                                        <p class="mb-1"><strong>Name:</strong> {{ detail.customer_name }}</p>
+                                        <h6>{% if detail.name_type == 'sales_person' %}Sales Person Information{% else %}Customer Information{% endif %}</h6>
+                                        <p class="mb-1"><strong>{% if detail.name_type == 'sales_person' %}Sales Person:{% else %}Name:{% endif %}</strong> {{ detail.customer_name }}</p>
                                         <p class="mb-1"><strong>Order ID:</strong> #{{ detail.order.id }}</p>
+                                        <p class="mb-1"><strong>Order Type:</strong> 
+                                            <span class="badge {% if detail.name_type == 'sales_person' %}bg-warning{% else %}bg-info{% endif %}">{{ detail.order.ordertype.name if detail.order.ordertype else 'N/A' }}</span>
+                                        </p>
                                         <p class="mb-1"><strong>Payment Method:</strong> 
                                             <span class="badge bg-primary">{{ detail.payment_method|title }}</span>
                                         </p>
@@ -192,10 +195,19 @@
 
 {% block scripts %}
 <script>
-// Export functionality for daily report
-function exportDailyReport() {
-    // This would typically generate a CSV or PDF report for the specific date
-    alert('Export functionality for daily report would be implemented here');
+// PDF export functionality for daily report
+function showExportMessage() {
+    // Show a brief message that PDF is being generated
+    const btn = event.target.closest('a');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Generating PDF...';
+    btn.classList.add('disabled');
+    
+    // Reset after a short delay
+    setTimeout(() => {
+        btn.innerHTML = originalText;
+        btn.classList.remove('disabled');
+    }, 2000);
 }
 </script>
 {% endblock %}

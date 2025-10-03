@@ -16,9 +16,9 @@
                 <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
                     <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
                 </a>
-                <button type="button" class="btn btn-success" onclick="exportReport()">
-                    <i class="fas fa-download me-2"></i>Export Report
-                </button>
+                <a href="{{ url_for('export_sales_report_pdf', start_date=start_date, end_date=end_date) }}" class="btn btn-success" target="_blank" onclick="showExportMessage()">
+                    <i class="fas fa-file-pdf me-2"></i>Export PDF
+                </a>
             </div>
         </div>
     </div>
@@ -233,10 +233,19 @@ function setDateRange(days) {
     document.getElementById('end_date').value = endDate.toISOString().split('T')[0];
 }
 
-// Export functionality
-function exportReport() {
-    // This would typically generate a CSV or PDF report
-    alert('Export functionality would be implemented here');
+// PDF export is now handled via direct link to the export route
+function showExportMessage() {
+    // Show a brief message that PDF is being generated
+    const btn = event.target.closest('a');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Generating PDF...';
+    btn.classList.add('disabled');
+    
+    // Reset after a short delay
+    setTimeout(() => {
+        btn.innerHTML = originalText;
+        btn.classList.remove('disabled');
+    }, 2000);
 }
 
 // Sales Chart
