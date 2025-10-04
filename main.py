@@ -1,14 +1,53 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User, Branch, ProductCatalog, BranchProduct, Order, OrderItem, Payment, StockTransaction, Supplier, PurchaseOrder, PurchaseOrderItem, Quotation, QuotationItem, SubCategory
+from models import db, User, Branch, ProductCatalog, BranchProduct, Order, OrderItem, Payment, StockTransaction, Supplier, PurchaseOrder, PurchaseOrderItem, Quotation, QuotationItem, SubCategory, Expense, ExpenseV2, ExpensePayment
 from datetime import datetime, timedelta
 import os
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from functools import wraps
 from decimal import Decimal
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
 app = Flask(__name__)
+
+# Cloudinary Configuration
+CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME', 'dxyewzvnr')
+CLOUDINARY_API_KEY = os.environ.get('CLOUDINARY_API_KEY', '171127627627327')
+CLOUDINARY_API_SECRET = os.environ.get('CLOUDINARY_API_SECRET', 'zgKkOpX35l93D7CdwnWOWGF2mk8')
+
+cloudinary.config(
+    cloud_name=CLOUDINARY_CLOUD_NAME,
+    api_key=CLOUDINARY_API_KEY,
+    api_secret=CLOUDINARY_API_SECRET
+)
+
+# Cloudinary helper functions
+def upload_to_cloudinary(file, folder="expense_receipts"):
+    """Upload file to Cloudinary and return the secure URL"""
+    try:
+        result = cloudinary.uploader.upload(
+            file,
+            folder=folder,
+            resource_type="auto",  # Automatically detect image, video, or raw
+            quality="auto:good",   # Optimize quality
+            fetch_format="auto"    # Auto format based on browser
+        )
+        return result.get('secure_url')
+    except Exception as e:
+        print(f"Cloudinary upload error: {e}")
+        return None
+
+def delete_from_cloudinary(public_id):
+    """Delete file from Cloudinary using public ID"""
+    try:
+        result = cloudinary.uploader.destroy(public_id)
+        return result.get('result') == 'ok'
+    except Exception as e:
+        print(f"Cloudinary delete error: {e}")
+        return False
 
 # Branch access control helper functions
 def get_user_accessible_branch_ids():
@@ -44,6 +83,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize extensions
 db.init_app(app)
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
@@ -97,7 +137,10 @@ def cashier_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
-
+print('Creating database tables...')
+with app.app_context():
+    db.create_all()
+    print('✅ Database tables created successfully!')
 # Routes
 @app.route('/')
 def index():
@@ -1326,33 +1369,36 @@ def export_daily_sales_pdf(date):
         # Calculate additional metrics
         total_items_sold = len(set(item['product_name'] for detail in payment_details for item in detail['order_items']))
         
-        # Calculate actual profit from final_price vs buying_price
+        # Calculate actual profit from final_price vs buying_price directly from OrderItems
         total_profit = 0
-        total_cost = 0
+        items_with_profit_data = 0
+        items_without_profit_data = 0
+        
         for detail in payment_details:
-            for item in detail['order_items']:
-                # Get the final selling price and buying price from order items
-                final_price = item['unit_price']  # This comes from final_price in the data preparation
-                buying_price = 0
+            order = detail['order']
+            for order_item in order.order_items:
+                # Get final_price and buying_price directly from OrderItem
+                final_price = float(order_item.final_price or 0)
+                buying_price = float(order_item.buying_price or 0)
+                quantity = float(order_item.quantity or 0)
                 
-                # Get buying price from the actual order item
-                if detail['order'].order_items:
-                    for order_item in detail['order'].order_items:
-                        if order_item.buying_price:
-                            buying_price = float(order_item.buying_price)
-                            break
-                
-                # Calculate profit for this item: final_price - buying_price
-                if buying_price > 0:
+                # Calculate profit: (final_price - buying_price) * quantity
+                if buying_price > 0 and final_price > 0:
                     profit_per_unit = final_price - buying_price
-                    profit_for_item = profit_per_unit * item['quantity']
+                    profit_for_item = profit_per_unit * quantity
                     total_profit += profit_for_item
-                    total_cost += buying_price * item['quantity']
+                    items_with_profit_data += 1
+                else:
+                    items_without_profit_data += 1
         
         # If we couldn't calculate profit from actual prices, fall back to estimation
         if total_profit == 0 and total_revenue > 0:
             # Estimate 20% profit margin if no buying prices available
             total_profit = total_revenue * 0.2
+            print(f"Profit estimation used: {total_profit} (20% of revenue)")
+        else:
+            print(f"Actual profit calculated: {total_profit}")
+            print(f"Items with profit data: {items_with_profit_data}, Items without: {items_without_profit_data}")
         
         # Summary section
         story.append(Paragraph("SUMMARY", heading_style))
@@ -1441,31 +1487,33 @@ def export_daily_sales_pdf(date):
             # Collect all items from all orders
             all_items = []
             for detail in payment_details:
-                for item in detail['order_items']:
-                    # Calculate actual profit from final_price vs buying_price
-                    final_price = item['unit_price']  # This comes from final_price in the data preparation
-                    buying_price = 0
+                order = detail['order']
+                for order_item in order.order_items:
+                    # Get product name
+                    if order_item.branch_product and order_item.branch_product.catalog_product:
+                        product_name = order_item.branch_product.catalog_product.name
+                    else:
+                        product_name = order_item.product_name or 'Manual Item'
                     
-                    # Get buying price from the actual order item
-                    if detail['order'].order_items:
-                        for order_item in detail['order'].order_items:
-                            if order_item.buying_price:
-                                buying_price = float(order_item.buying_price)
-                                break
+                    # Get prices directly from OrderItem
+                    final_price = float(order_item.final_price or 0)
+                    buying_price = float(order_item.buying_price or 0)
+                    quantity = float(order_item.quantity or 0)
+                    total_price = final_price * quantity
                     
-                    # Calculate profit for this item: final_price - buying_price
-                    if buying_price > 0:
+                    # Calculate profit: (final_price - buying_price) * quantity
+                    if buying_price > 0 and final_price > 0:
                         profit_per_unit = final_price - buying_price
-                        profit = profit_per_unit * item['quantity']
+                        profit = profit_per_unit * quantity
                     else:
                         # Fall back to 20% estimation if no buying price available
-                        profit = item['total_price'] * 0.2
+                        profit = total_price * 0.2
                     
                     all_items.append({
-                        'product_name': item['product_name'],
-                        'quantity': item['quantity'],
-                        'unit_price': item['unit_price'],
-                        'total_price': item['total_price'],
+                        'product_name': product_name,
+                        'quantity': quantity,
+                        'unit_price': final_price,
+                        'total_price': total_price,
                         'profit': profit
                     })
             
@@ -1866,6 +1914,524 @@ def generate_receipt(payment_id, action='view'):
 @app.errorhandler(404)
 def not_found_error(error):
     return render_template('404.html'), 404
+
+# Expense V2 Management Routes (New Flow)
+@app.route('/expenses-v2')
+@cashier_required
+def expenses_v2():
+    page = request.args.get('page', 1, type=int)
+    status_filter = request.args.get('status', 'all')
+    category_filter = request.args.get('category', 'all')
+    payment_status_filter = request.args.get('payment_status', 'all')
+    
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Build query with branch filtering
+    query = ExpenseV2.query
+    
+    # Filter by accessible branches
+    if accessible_branch_ids:
+        query = query.filter(ExpenseV2.branch_id.in_(accessible_branch_ids))
+    
+    # Apply filters
+    if status_filter != 'all':
+        query = query.filter_by(status=status_filter)
+    
+    if category_filter != 'all':
+        query = query.filter_by(category=category_filter)
+    
+    # Hide restricted categories (rent and salaries) from cashiers
+    query = query.filter(~ExpenseV2.category.in_(['rent', 'salaries']))
+    
+    # Get expenses with pagination
+    expenses = query.order_by(ExpenseV2.created_at.desc()).paginate(
+        page=page, per_page=20, error_out=False
+    )
+    
+    # Get unique categories for filter dropdown
+    categories = db.session.query(ExpenseV2.category).distinct().all()
+    categories = [cat[0] for cat in categories]
+    
+    return render_template('expenses_v2.html', 
+                         expenses=expenses, 
+                         status_filter=status_filter,
+                         category_filter=category_filter,
+                         payment_status_filter=payment_status_filter,
+                         categories=categories)
+
+@app.route('/expenses-v2/add', methods=['GET', 'POST'])
+@cashier_required
+def add_expense_v2():
+    if request.method == 'POST':
+        try:
+            # Get accessible branch IDs for current user
+            accessible_branch_ids = get_user_accessible_branch_ids()
+            
+            # Get form data
+            title = request.form.get('title')
+            description = request.form.get('description')
+            amount = request.form.get('amount')
+            category = request.form.get('category')
+            expense_date = request.form.get('expense_date')
+            branch_id = request.form.get('branch_id')
+            
+            # Process uploaded receipt files
+            receipt_urls = []
+            if 'receipt_files' in request.files:
+                files = request.files.getlist('receipt_files')
+                for file in files:
+                    if file and file.filename:
+                        # Upload to Cloudinary
+                        uploaded_url = upload_to_cloudinary(file)
+                        if uploaded_url:
+                            receipt_urls.append(uploaded_url)
+                        else:
+                            flash(f'Failed to upload file: {file.filename}', 'error')
+            
+            # Validate required fields
+            if not all([title, amount, category, expense_date]):
+                flash('Please fill in all required fields.', 'error')
+                return redirect(url_for('add_expense_v2'))
+            
+            # Validate branch access
+            if branch_id:
+                branch_id = int(branch_id)
+                if branch_id not in accessible_branch_ids:
+                    flash('You do not have access to this branch.', 'error')
+                    return redirect(url_for('add_expense_v2'))
+            else:
+                # If no branch selected and user has access to multiple branches, require selection
+                if len(accessible_branch_ids) > 1:
+                    flash('Please select a branch.', 'error')
+                    return redirect(url_for('add_expense_v2'))
+                elif len(accessible_branch_ids) == 1:
+                    branch_id = accessible_branch_ids[0]
+                else:
+                    branch_id = None
+            
+            # Create new expense
+            expense = ExpenseV2(
+                title=title,
+                description=description,
+                amount=float(amount),
+                category=category,
+                expense_date=datetime.strptime(expense_date, '%Y-%m-%d').date(),
+                receipt_urls=receipt_urls if receipt_urls else None,
+                branch_id=branch_id,
+                user_id=current_user.id,
+                status='pending'
+            )
+            
+            db.session.add(expense)
+            db.session.commit()
+            
+            flash('Expense added successfully!', 'success')
+            return redirect(url_for('view_expense_v2', expense_id=expense.id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding expense: {str(e)}', 'error')
+            return redirect(url_for('add_expense_v2'))
+    
+    # GET request - show form
+    # Get accessible branches for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    accessible_branches = current_user.get_accessible_branches()
+    
+    return render_template('add_expense_v2.html', branches=accessible_branches)
+
+@app.route('/expenses-v2/<int:expense_id>')
+@cashier_required
+def view_expense_v2(expense_id):
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Get expense with access control
+    expense = ExpenseV2.query.get_or_404(expense_id)
+    
+    # Check if user has access to this expense's branch
+    if expense.branch_id and expense.branch_id not in accessible_branch_ids:
+        flash('You do not have access to this expense.', 'error')
+        return redirect(url_for('expenses_v2'))
+    
+    # Hide restricted categories (rent and salaries) from cashiers
+    if expense.category in ['rent', 'salaries']:
+        flash('You do not have access to this expense.', 'error')
+        return redirect(url_for('expenses_v2'))
+    
+    # Get payments for this expense
+    payments = ExpensePayment.query.filter_by(expense_id=expense_id).order_by(ExpensePayment.created_at.desc()).all()
+    
+    return render_template('view_expense_v2.html', expense=expense, payments=payments)
+
+@app.route('/expenses-v2/<int:expense_id>/edit', methods=['GET', 'POST'])
+@cashier_required
+def edit_expense_v2(expense_id):
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Get expense with access control
+    expense = ExpenseV2.query.get_or_404(expense_id)
+    
+    # Check if user has access to this expense's branch
+    if expense.branch_id and expense.branch_id not in accessible_branch_ids:
+        flash('You do not have access to this expense.', 'error')
+        return redirect(url_for('expenses_v2'))
+    
+    # Hide restricted categories (rent and salaries) from cashiers
+    if expense.category in ['rent', 'salaries']:
+        flash('You do not have access to this expense.', 'error')
+        return redirect(url_for('expenses_v2'))
+    
+    # Only allow editing if expense is pending
+    if expense.status != 'pending':
+        flash('You can only edit pending expenses.', 'error')
+        return redirect(url_for('view_expense_v2', expense_id=expense_id))
+    
+    if request.method == 'POST':
+        try:
+            # Get form data
+            title = request.form.get('title')
+            description = request.form.get('description')
+            amount = request.form.get('amount')
+            category = request.form.get('category')
+            expense_date = request.form.get('expense_date')
+            branch_id = request.form.get('branch_id')
+            
+            # Process uploaded receipt files
+            receipt_urls = []
+            if 'receipt_files' in request.files:
+                files = request.files.getlist('receipt_files')
+                for file in files:
+                    if file and file.filename:
+                        # Upload to Cloudinary
+                        uploaded_url = upload_to_cloudinary(file)
+                        if uploaded_url:
+                            receipt_urls.append(uploaded_url)
+                        else:
+                            flash(f'Failed to upload file: {file.filename}', 'error')
+            
+            # If no new files uploaded, keep existing URLs
+            if not receipt_urls:
+                receipt_urls = expense.receipt_list
+            
+            # Validate required fields
+            if not all([title, amount, category, expense_date]):
+                flash('Please fill in all required fields.', 'error')
+                return redirect(url_for('edit_expense_v2', expense_id=expense_id))
+            
+            # Validate branch access
+            if branch_id:
+                branch_id = int(branch_id)
+                if branch_id not in accessible_branch_ids:
+                    flash('You do not have access to this branch.', 'error')
+                    return redirect(url_for('edit_expense_v2', expense_id=expense_id))
+            else:
+                if len(accessible_branch_ids) > 1:
+                    flash('Please select a branch.', 'error')
+                    return redirect(url_for('edit_expense_v2', expense_id=expense_id))
+                elif len(accessible_branch_ids) == 1:
+                    branch_id = accessible_branch_ids[0]
+                else:
+                    branch_id = None
+            
+            # Update expense
+            expense.title = title
+            expense.description = description
+            expense.amount = float(amount)
+            expense.category = category
+            expense.expense_date = datetime.strptime(expense_date, '%Y-%m-%d').date()
+            expense.receipt_urls = receipt_urls if receipt_urls else None
+            expense.branch_id = branch_id
+            expense.updated_at = datetime.now()
+            
+            db.session.commit()
+            
+            flash('Expense updated successfully!', 'success')
+            return redirect(url_for('view_expense_v2', expense_id=expense_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating expense: {str(e)}', 'error')
+            return redirect(url_for('edit_expense_v2', expense_id=expense_id))
+    
+    # GET request - show form
+    accessible_branches = current_user.get_accessible_branches()
+    
+    return render_template('edit_expense_v2.html', expense=expense, branches=accessible_branches)
+
+@app.route('/expenses-v2/<int:expense_id>/payments/add', methods=['GET', 'POST'])
+@cashier_required
+def add_expense_payment(expense_id):
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Get expense with access control
+    expense = ExpenseV2.query.get_or_404(expense_id)
+    
+    # Check if user has access to this expense's branch
+    if expense.branch_id and expense.branch_id not in accessible_branch_ids:
+        flash('You do not have access to this expense.', 'error')
+        return redirect(url_for('expenses_v2'))
+    
+    # Hide restricted categories (rent and salaries) from cashiers
+    if expense.category in ['rent', 'salaries']:
+        flash('You do not have access to this expense.', 'error')
+        return redirect(url_for('expenses_v2'))
+    
+    if request.method == 'POST':
+        try:
+            # Get form data
+            amount = request.form.get('amount')
+            payment_method = request.form.get('payment_method')
+            payment_date = request.form.get('payment_date')
+            payment_reference = request.form.get('payment_reference')
+            notes = request.form.get('notes')
+            
+            # Validate required fields
+            if not all([amount, payment_method, payment_date]):
+                flash('Please fill in all required fields.', 'error')
+                return redirect(url_for('add_expense_payment', expense_id=expense_id))
+            
+            # Create new payment
+            payment = ExpensePayment(
+                expense_id=expense_id,
+                amount=float(amount),
+                payment_method=payment_method,
+                payment_date=datetime.strptime(payment_date, '%Y-%m-%d').date(),
+                payment_reference=payment_reference,
+                notes=notes,
+                user_id=current_user.id,
+                status='completed'  # Auto-complete payments for cashiers
+            )
+            
+            db.session.add(payment)
+            db.session.commit()
+            
+            flash('Payment added successfully!', 'success')
+            return redirect(url_for('view_expense_v2', expense_id=expense_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding payment: {str(e)}', 'error')
+            return redirect(url_for('add_expense_payment', expense_id=expense_id))
+    
+    # GET request - show form
+    return render_template('add_expense_payment.html', expense=expense)
+
+# Expense Management Routes (Old System)
+@app.route('/expenses')
+@cashier_required
+def expenses():
+    page = request.args.get('page', 1, type=int)
+    status_filter = request.args.get('status', 'all')
+    category_filter = request.args.get('category', 'all')
+    
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Build query with branch filtering
+    query = Expense.query
+    
+    # Filter by accessible branches
+    if accessible_branch_ids:
+        query = query.filter(Expense.branch_id.in_(accessible_branch_ids))
+    
+    # Apply filters
+    if status_filter != 'all':
+        query = query.filter_by(status=status_filter)
+    
+    if category_filter != 'all':
+        query = query.filter_by(category=category_filter)
+    
+    # Hide restricted categories (rent and salaries) from cashiers
+    query = query.filter(~Expense.category.in_(['rent', 'salaries']))
+    
+    # Get expenses with pagination
+    expenses = query.order_by(Expense.created_at.desc()).paginate(
+        page=page, per_page=20, error_out=False
+    )
+    
+    # Get unique categories for filter dropdown
+    categories = db.session.query(Expense.category).distinct().all()
+    categories = [cat[0] for cat in categories]
+    
+    return render_template('expenses.html', 
+                         expenses=expenses, 
+                         status_filter=status_filter,
+                         category_filter=category_filter,
+                         categories=categories)
+
+@app.route('/expenses/add', methods=['GET', 'POST'])
+@cashier_required
+def add_expense():
+    if request.method == 'POST':
+        try:
+            # Get accessible branch IDs for current user
+            accessible_branch_ids = get_user_accessible_branch_ids()
+            
+            # Get form data
+            title = request.form.get('title')
+            description = request.form.get('description')
+            amount = request.form.get('amount')
+            category = request.form.get('category')
+            expense_date = request.form.get('expense_date')
+            payment_method = request.form.get('payment_method')
+            branch_id = request.form.get('branch_id')
+            
+            # Validate required fields
+            if not all([title, amount, category, expense_date]):
+                flash('Please fill in all required fields.', 'error')
+                return redirect(url_for('add_expense'))
+            
+            # Validate branch access
+            if branch_id:
+                branch_id = int(branch_id)
+                if branch_id not in accessible_branch_ids:
+                    flash('You do not have access to this branch.', 'error')
+                    return redirect(url_for('add_expense'))
+            else:
+                # If no branch selected and user has access to multiple branches, require selection
+                if len(accessible_branch_ids) > 1:
+                    flash('Please select a branch.', 'error')
+                    return redirect(url_for('add_expense'))
+                elif len(accessible_branch_ids) == 1:
+                    branch_id = accessible_branch_ids[0]
+                else:
+                    branch_id = None
+            
+            # Create new expense
+            expense = Expense(
+                title=title,
+                description=description,
+                amount=float(amount),
+                category=category,
+                expense_date=datetime.strptime(expense_date, '%Y-%m-%d').date(),
+                payment_method=payment_method,
+                branch_id=branch_id,
+                user_id=current_user.id,
+                status='pending'
+            )
+            
+            db.session.add(expense)
+            db.session.commit()
+            
+            flash('Expense added successfully!', 'success')
+            return redirect(url_for('expenses'))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding expense: {str(e)}', 'error')
+            return redirect(url_for('add_expense'))
+    
+    # GET request - show form
+    # Get accessible branches for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    accessible_branches = current_user.get_accessible_branches()
+    
+    return render_template('add_expense.html', branches=accessible_branches)
+
+@app.route('/expenses/<int:expense_id>')
+@cashier_required
+def view_expense(expense_id):
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Get expense with access control
+    expense = Expense.query.get_or_404(expense_id)
+    
+    # Check if user has access to this expense's branch
+    if expense.branch_id and expense.branch_id not in accessible_branch_ids:
+        flash('You do not have access to this expense.', 'error')
+        return redirect(url_for('expenses'))
+    
+    # Hide restricted categories (rent and salaries) from cashiers
+    if expense.category in ['rent', 'salaries']:
+        flash('You do not have access to this expense.', 'error')
+        return redirect(url_for('expenses'))
+    
+    return render_template('view_expense.html', expense=expense)
+
+@app.route('/expenses/<int:expense_id>/edit', methods=['GET', 'POST'])
+@cashier_required
+def edit_expense(expense_id):
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Get expense with access control
+    expense = Expense.query.get_or_404(expense_id)
+    
+    # Check if user has access to this expense's branch
+    if expense.branch_id and expense.branch_id not in accessible_branch_ids:
+        flash('You do not have access to this expense.', 'error')
+        return redirect(url_for('expenses'))
+    
+    # Hide restricted categories (rent and salaries) from cashiers
+    if expense.category in ['rent', 'salaries']:
+        flash('You do not have access to this expense.', 'error')
+        return redirect(url_for('expenses'))
+    
+    # Only allow editing if expense is pending
+    if expense.status != 'pending':
+        flash('You can only edit pending expenses.', 'error')
+        return redirect(url_for('view_expense', expense_id=expense_id))
+    
+    if request.method == 'POST':
+        try:
+            # Get form data
+            title = request.form.get('title')
+            description = request.form.get('description')
+            amount = request.form.get('amount')
+            category = request.form.get('category')
+            expense_date = request.form.get('expense_date')
+            payment_method = request.form.get('payment_method')
+            branch_id = request.form.get('branch_id')
+            
+            # Validate required fields
+            if not all([title, amount, category, expense_date]):
+                flash('Please fill in all required fields.', 'error')
+                return redirect(url_for('edit_expense', expense_id=expense_id))
+            
+            # Validate branch access
+            if branch_id:
+                branch_id = int(branch_id)
+                if branch_id not in accessible_branch_ids:
+                    flash('You do not have access to this branch.', 'error')
+                    return redirect(url_for('edit_expense', expense_id=expense_id))
+            else:
+                if len(accessible_branch_ids) > 1:
+                    flash('Please select a branch.', 'error')
+                    return redirect(url_for('edit_expense', expense_id=expense_id))
+                elif len(accessible_branch_ids) == 1:
+                    branch_id = accessible_branch_ids[0]
+                else:
+                    branch_id = None
+            
+            # Update expense
+            expense.title = title
+            expense.description = description
+            expense.amount = float(amount)
+            expense.category = category
+            expense.expense_date = datetime.strptime(expense_date, '%Y-%m-%d').date()
+            expense.payment_method = payment_method
+            expense.branch_id = branch_id
+            expense.updated_at = datetime.now()
+            
+            db.session.commit()
+            
+            flash('Expense updated successfully!', 'success')
+            return redirect(url_for('view_expense', expense_id=expense_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating expense: {str(e)}', 'error')
+            return redirect(url_for('edit_expense', expense_id=expense_id))
+    
+    # GET request - show form
+    accessible_branches = current_user.get_accessible_branches()
+    
+    return render_template('edit_expense.html', expense=expense, branches=accessible_branches)
 
 @app.errorhandler(500)
 def internal_error(error):

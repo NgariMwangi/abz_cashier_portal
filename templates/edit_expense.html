@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Expense{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-edit me-2"></i>Edit Expense #{{ expense.id }}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" id="expenseForm">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="title" class="form-label">Title <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="title" name="title" value="{{ expense.title }}" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="category" class="form-label">Category <span class="text-danger">*</span></label>
+                                <select class="form-select" id="category" name="category" required>
+                                    <option value="">Select Category</option>
+                                    <option value="utilities" {% if expense.category == 'utilities' %}selected{% endif %}>Utilities</option>
+                                    <option value="supplies" {% if expense.category == 'supplies' %}selected{% endif %}>Supplies</option>
+                                    <option value="marketing" {% if expense.category == 'marketing' %}selected{% endif %}>Marketing</option>
+                                    <option value="transport" {% if expense.category == 'transport' %}selected{% endif %}>Transport</option>
+                                    <option value="maintenance" {% if expense.category == 'maintenance' %}selected{% endif %}>Maintenance</option>
+                                    <option value="insurance" {% if expense.category == 'insurance' %}selected{% endif %}>Insurance</option>
+                                    <option value="office" {% if expense.category == 'office' %}selected{% endif %}>Office Expenses</option>
+                                    <option value="other" {% if expense.category == 'other' %}selected{% endif %}>Other</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="amount" class="form-label">Amount (KSh) <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="amount" name="amount" step="0.01" min="0" value="{{ expense.amount }}" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="expense_date" class="form-label">Expense Date <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" id="expense_date" name="expense_date" value="{{ expense.expense_date.strftime('%Y-%m-%d') }}" required>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="payment_method" class="form-label">Payment Method</label>
+                                <select class="form-select" id="payment_method" name="payment_method">
+                                    <option value="">Select Payment Method</option>
+                                    <option value="cash" {% if expense.payment_method == 'cash' %}selected{% endif %}>Cash</option>
+                                    <option value="bank_transfer" {% if expense.payment_method == 'bank_transfer' %}selected{% endif %}>Bank Transfer</option>
+                                    <option value="card" {% if expense.payment_method == 'card' %}selected{% endif %}>Card</option>
+                                    <option value="mobile_money" {% if expense.payment_method == 'mobile_money' %}selected{% endif %}>Mobile Money</option>
+                                    <option value="cheque" {% if expense.payment_method == 'cheque' %}selected{% endif %}>Cheque</option>
+                                </select>
+                            </div>
+                            {% if branches|length > 1 %}
+                            <div class="col-md-6 mb-3">
+                                <label for="branch_id" class="form-label">Branch <span class="text-danger">*</span></label>
+                                <select class="form-select" id="branch_id" name="branch_id" required>
+                                    <option value="">Select Branch</option>
+                                    {% for branch in branches %}
+                                    <option value="{{ branch.id }}" {% if expense.branch_id == branch.id %}selected{% endif %}>{{ branch.name }} - {{ branch.location }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            {% elif branches|length == 1 %}
+                            <div class="col-md-6 mb-3">
+                                <label for="branch_id" class="form-label">Branch</label>
+                                <input type="hidden" name="branch_id" value="{{ branches[0].id }}">
+                                <input type="text" class="form-control" value="{{ branches[0].name }} - {{ branches[0].location }}" readonly>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="3" placeholder="Optional description of the expense...">{{ expense.description or '' }}</textarea>
+                        </div>
+
+                        <!-- Status Information -->
+                        <div class="alert alert-info">
+                            <h6 class="alert-heading">
+                                <i class="fas fa-info-circle me-2"></i>Expense Status
+                            </h6>
+                            <p class="mb-2">This expense is currently <strong>{{ expense.status|title }}</strong>.</p>
+                            {% if expense.status == 'pending' %}
+                            <p class="mb-0">You can edit pending expenses. Once approved or rejected, they become read-only.</p>
+                            {% else %}
+                            <p class="mb-0">This expense has been {{ expense.status }} and cannot be edited.</p>
+                            {% endif %}
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('view_expense', expense_id=expense.id) }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left me-2"></i>Back to Details
+                            </a>
+                            <button type="submit" class="btn btn-primary" {% if expense.status != 'pending' %}disabled{% endif %}>
+                                <i class="fas fa-save me-2"></i>Update Expense
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Form validation
+    const form = document.getElementById('expenseForm');
+    form.addEventListener('submit', function(e) {
+        const amount = parseFloat(document.getElementById('amount').value);
+        if (amount <= 0) {
+            e.preventDefault();
+            alert('Amount must be greater than 0');
+            return;
+        }
+    });
+});
+</script>
+{% endblock %}

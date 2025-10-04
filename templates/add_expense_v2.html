@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Add Expense{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-plus me-2"></i>Add New Expense
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" id="expenseForm" enctype="multipart/form-data">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="title" class="form-label">Title <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="title" name="title" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="category" class="form-label">Category <span class="text-danger">*</span></label>
+                                <select class="form-select" id="category" name="category" required>
+                                    <option value="">Select Category</option>
+                                    <option value="utilities">Utilities</option>
+                                    <option value="supplies">Supplies</option>
+                                    <option value="marketing">Marketing</option>
+                                    <option value="transport">Transport</option>
+                                    <option value="maintenance">Maintenance</option>
+                                    <option value="insurance">Insurance</option>
+                                    <option value="office">Office Expenses</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="amount" class="form-label">Amount (KSh) <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="amount" name="amount" step="0.01" min="0" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="expense_date" class="form-label">Expense Date <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" id="expense_date" name="expense_date" required>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label for="receipt_files" class="form-label">Receipt Files</label>
+                                <input type="file" class="form-control" id="receipt_files" name="receipt_files" multiple accept="image/*,.pdf,.doc,.docx">
+                                <small class="form-text text-muted">Optional: Upload receipt images or documents. You can select multiple files at once.</small>
+                                <div id="file-preview" class="mt-2"></div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            {% if branches|length > 1 %}
+                            <div class="col-md-12 mb-3">
+                                <label for="branch_id" class="form-label">Branch <span class="text-danger">*</span></label>
+                                <select class="form-select" id="branch_id" name="branch_id" required>
+                                    <option value="">Select Branch</option>
+                                    {% for branch in branches %}
+                                    <option value="{{ branch.id }}">{{ branch.name }} - {{ branch.location }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            {% elif branches|length == 1 %}
+                            <div class="col-md-12 mb-3">
+                                <label for="branch_id" class="form-label">Branch</label>
+                                <input type="hidden" name="branch_id" value="{{ branches[0].id }}">
+                                <input type="text" class="form-control" value="{{ branches[0].name }} - {{ branches[0].location }}" readonly>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="3" placeholder="Optional description of the expense..."></textarea>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <h6 class="alert-heading">
+                                <i class="fas fa-info-circle me-2"></i>Expense Flow
+                            </h6>
+                            <p class="mb-0">After creating the expense, you can add multiple payments to track how much has been paid against the total amount.</p>
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('expenses_v2') }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left me-2"></i>Back to Expenses
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-2"></i>Add Expense
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Set today's date as default
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('expense_date').value = today;
+
+    // Form validation
+    const form = document.getElementById('expenseForm');
+    form.addEventListener('submit', function(e) {
+        const amount = parseFloat(document.getElementById('amount').value);
+        if (amount <= 0) {
+            e.preventDefault();
+            alert('Amount must be greater than 0');
+            return;
+        }
+    });
+
+    // File preview functionality
+    const fileInput = document.getElementById('receipt_files');
+    const filePreview = document.getElementById('file-preview');
+
+    fileInput.addEventListener('change', function(e) {
+        const files = Array.from(e.target.files);
+        filePreview.innerHTML = '';
+
+        if (files.length > 0) {
+            const previewContainer = document.createElement('div');
+            previewContainer.className = 'row';
+
+            files.forEach((file, index) => {
+                const col = document.createElement('div');
+                col.className = 'col-md-4 mb-2';
+
+                const card = document.createElement('div');
+                card.className = 'card';
+
+                const cardBody = document.createElement('div');
+                cardBody.className = 'card-body p-2';
+
+                if (file.type.startsWith('image/')) {
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(file);
+                    img.className = 'img-thumbnail';
+                    img.style.maxHeight = '100px';
+                    img.style.width = '100%';
+                    img.style.objectFit = 'cover';
+                    cardBody.appendChild(img);
+                } else {
+                    const icon = document.createElement('i');
+                    icon.className = 'fas fa-file fa-3x text-muted';
+                    cardBody.appendChild(icon);
+                }
+
+                const fileName = document.createElement('small');
+                fileName.className = 'd-block text-center mt-1';
+                fileName.textContent = file.name;
+                cardBody.appendChild(fileName);
+
+                card.appendChild(cardBody);
+                col.appendChild(card);
+                previewContainer.appendChild(col);
+            });
+
+            filePreview.appendChild(previewContainer);
+        }
+    });
+});
+</script>
+{% endblock %}

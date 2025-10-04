@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Expense Details{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-receipt me-2"></i>Expense Details #{{ expense.id }}
+                    </h5>
+                    <div>
+                        {% if expense.status == 'pending' %}
+                        <a href="{{ url_for('edit_expense', expense_id=expense.id) }}" class="btn btn-warning btn-sm me-2">
+                            <i class="fas fa-edit me-1"></i>Edit
+                        </a>
+                        {% endif %}
+                        <a href="{{ url_for('expenses') }}" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-arrow-left me-1"></i>Back
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-3">Basic Information</h6>
+                            <table class="table table-borderless">
+                                <tr>
+                                    <td class="fw-bold">Title:</td>
+                                    <td>{{ expense.title }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold">Amount:</td>
+                                    <td>
+                                        <span class="h5 text-danger">KSh {{ "{:,.0f}".format(expense.amount) }}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold">Category:</td>
+                                    <td>
+                                        <span class="badge bg-info">{{ expense.category|title }}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold">Expense Date:</td>
+                                    <td>{{ expense.expense_date.strftime('%A, %B %d, %Y') }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold">Payment Method:</td>
+                                    <td>
+                                        {% if expense.payment_method %}
+                                        {{ expense.payment_method|title }}
+                                        {% else %}
+                                        <span class="text-muted">Not specified</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-3">Branch & Status</h6>
+                            <table class="table table-borderless">
+                                <tr>
+                                    <td class="fw-bold">Branch:</td>
+                                    <td>
+                                        {% if expense.branch %}
+                                        <strong>{{ expense.branch.name }}</strong><br>
+                                        <small class="text-muted">{{ expense.branch.location }}</small>
+                                        {% else %}
+                                        <span class="text-muted">All Branches</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold">Status:</td>
+                                    <td>
+                                        {% if expense.status == 'pending' %}
+                                        <span class="badge bg-warning">Pending Approval</span>
+                                        {% elif expense.status == 'approved' %}
+                                        <span class="badge bg-success">Approved</span>
+                                        {% elif expense.status == 'rejected' %}
+                                        <span class="badge bg-danger">Rejected</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold">Recorded By:</td>
+                                    <td>
+                                        {{ expense.user.firstname }} {{ expense.user.lastname }}<br>
+                                        <small class="text-muted">{{ expense.created_at.strftime('%B %d, %Y at %I:%M %p') }}</small>
+                                    </td>
+                                </tr>
+                                {% if expense.approved_by %}
+                                <tr>
+                                    <td class="fw-bold">Approved By:</td>
+                                    <td>
+                                        {{ expense.approver.firstname }} {{ expense.approver.lastname }}<br>
+                                        <small class="text-muted">{{ expense.updated_at.strftime('%B %d, %Y at %I:%M %p') }}</small>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                            </table>
+                        </div>
+                    </div>
+
+                    {% if expense.description %}
+                    <hr>
+                    <div class="row">
+                        <div class="col-12">
+                            <h6 class="text-muted mb-3">Description</h6>
+                            <div class="p-3 bg-light rounded">
+                                {{ expense.description|nl2br }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if expense.approval_notes %}
+                    <hr>
+                    <div class="row">
+                        <div class="col-12">
+                            <h6 class="text-muted mb-3">Approval Notes</h6>
+                            <div class="p-3 bg-light rounded">
+                                {{ expense.approval_notes|nl2br }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if expense.receipt_url %}
+                    <hr>
+                    <div class="row">
+                        <div class="col-12">
+                            <h6 class="text-muted mb-3">Receipt</h6>
+                            <a href="{{ expense.receipt_url }}" target="_blank" class="btn btn-outline-primary">
+                                <i class="fas fa-file-image me-2"></i>View Receipt
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <hr>
+                    <div class="row">
+                        <div class="col-12">
+                            <h6 class="text-muted mb-3">Timeline</h6>
+                            <div class="timeline">
+                                <div class="timeline-item">
+                                    <div class="timeline-marker bg-primary"></div>
+                                    <div class="timeline-content">
+                                        <h6 class="mb-1">Expense Created</h6>
+                                        <p class="text-muted mb-0">{{ expense.created_at.strftime('%B %d, %Y at %I:%M %p') }}</p>
+                                    </div>
+                                </div>
+                                {% if expense.status != 'pending' %}
+                                <div class="timeline-item">
+                                    <div class="timeline-marker {% if expense.status == 'approved' %}bg-success{% else %}bg-danger{% endif %}"></div>
+                                    <div class="timeline-content">
+                                        <h6 class="mb-1">
+                                            Expense {{ expense.status|title }}
+                                            {% if expense.approved_by %}
+                                            by {{ expense.approver.firstname }} {{ expense.approver.lastname }}
+                                            {% endif %}
+                                        </h6>
+                                        <p class="text-muted mb-0">{{ expense.updated_at.strftime('%B %d, %Y at %I:%M %p') }}</p>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.timeline {
+    position: relative;
+    padding-left: 30px;
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #dee2e6;
+}
+
+.timeline-item {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.timeline-marker {
+    position: absolute;
+    left: -22px;
+    top: 5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 2px #dee2e6;
+}
+
+.timeline-content {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 3px solid #007bff;
+}
+</style>
+{% endblock %}
