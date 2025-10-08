@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}Deliveries{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>
+                    <i class="fas fa-truck me-2"></i>Deliveries
+                </h2>
+                <a href="{{ url_for('create_delivery') }}" class="btn btn-primary">
+                    <i class="fas fa-plus me-2"></i>Create Delivery
+                </a>
+            </div>
+
+            <!-- Filters -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form method="GET" class="row g-3">
+                        <div class="col-md-3">
+                            <label for="status" class="form-label">Status</label>
+                            <select class="form-select" id="status" name="status">
+                                <option value="all" {% if current_status == 'all' %}selected{% endif %}>All Statuses</option>
+                                {% for status in statuses %}
+                                <option value="{{ status }}" {% if current_status == status %}selected{% endif %}>
+                                    {{ status.replace('_', ' ').title() }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="branch" class="form-label">Branch</label>
+                            <select class="form-select" id="branch" name="branch">
+                                <option value="all" {% if current_branch == 'all' %}selected{% endif %}>All Branches</option>
+                                {% for branch in branches %}
+                                <option value="{{ branch.id }}" {% if current_branch == branch.id|string %}selected{% endif %}>
+                                    {{ branch.name }} - {{ branch.location }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">&nbsp;</label>
+                            <div>
+                                <button type="submit" class="btn btn-outline-primary">
+                                    <i class="fas fa-filter me-1"></i>Filter
+                                </button>
+                                <a href="{{ url_for('deliveries') }}" class="btn btn-outline-secondary">
+                                    <i class="fas fa-times me-1"></i>Clear
+                                </a>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Deliveries List -->
+            <div class="card">
+                <div class="card-body">
+                    {% if deliveries.items %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Delivery ID</th>
+                                        <th>Order ID</th>
+                                        <th>Customer Phone</th>
+                                        <th>Location</th>
+                                        <th>Amount</th>
+                                        <th>Status</th>
+                                        <th>Payment Status</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for delivery in deliveries.items %}
+                                    <tr>
+                                        <td>
+                                            <strong>#{{ delivery.id }}</strong>
+                                        </td>
+                                        <td>
+                                            <a href="{{ url_for('view_order', order_id=delivery.order_id) }}" class="text-decoration-none">
+                                                #{{ delivery.order_id }}
+                                            </a>
+                                        </td>
+                                        <td>{{ delivery.customer_phone }}</td>
+                                        <td>
+                                            <span class="text-truncate d-inline-block" style="max-width: 150px;" title="{{ delivery.delivery_location }}">
+                                                {{ delivery.delivery_location }}
+                                            </span>
+                                        </td>
+                                        <td>KSh {{ "{:,.0f}".format(delivery.delivery_amount) }}</td>
+                                        <td>
+                                            {% set status_colors = {
+                                                'pending': 'warning',
+                                                'in_transit': 'info',
+                                                'delivered': 'success',
+                                                'cancelled': 'danger',
+                                                'failed': 'danger'
+                                            } %}
+                                            <span class="badge bg-{{ status_colors.get(delivery.delivery_status, 'secondary') }}">
+                                                {{ delivery.delivery_status.replace('_', ' ').title() }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            {% set payment_colors = {
+                                                'pending': 'warning',
+                                                'partial': 'info',
+                                                'paid': 'success',
+                                                'failed': 'danger',
+                                                'refunded': 'secondary'
+                                            } %}
+                                            <span class="badge bg-{{ payment_colors.get(delivery.payment_status, 'secondary') }}">
+                                                {{ delivery.payment_status.replace('_', ' ').title() }}
+                                            </span>
+                                        </td>
+                                        <td>{{ delivery.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                        <td>
+                                            <div class="btn-group" role="group">
+                                                <a href="{{ url_for('view_delivery', delivery_id=delivery.id) }}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
+                                                {% if delivery.delivery_status in ['pending', 'in_transit'] %}
+                                                <a href="{{ url_for('edit_delivery', delivery_id=delivery.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+                                                {% endif %}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        {% if deliveries.pages > 1 %}
+                        <nav aria-label="Deliveries pagination">
+                            <ul class="pagination justify-content-center">
+                                {% if deliveries.has_prev %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('deliveries', page=deliveries.prev_num, status=current_status, branch=current_branch) }}">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                
+                                {% for page_num in deliveries.iter_pages() %}
+                                    {% if page_num %}
+                                        {% if page_num != deliveries.page %}
+                                            <li class="page-item">
+                                                <a class="page-link" href="{{ url_for('deliveries', page=page_num, status=current_status, branch=current_branch) }}">{{ page_num }}</a>
+                                            </li>
+                                        {% else %}
+                                            <li class="page-item active">
+                                                <span class="page-link">{{ page_num }}</span>
+                                            </li>
+                                        {% endif %}
+                                    {% else %}
+                                        <li class="page-item disabled">
+                                            <span class="page-link">…</span>
+                                        </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if deliveries.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('deliveries', page=deliveries.next_num, status=current_status, branch=current_branch) }}">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                        {% endif %}
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-truck fa-3x text-muted mb-3"></i>
+                            <h5 class="text-muted">No deliveries found</h5>
+                            <p class="text-muted">There are no deliveries matching your current filters.</p>
+                            <a href="{{ url_for('create_delivery') }}" class="btn btn-primary">
+                                <i class="fas fa-plus me-2"></i>Create First Delivery
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

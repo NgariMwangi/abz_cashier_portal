@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Create Delivery{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-truck me-2"></i>Create New Delivery
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" id="deliveryForm">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="order_id" class="form-label">Order <span class="text-danger">*</span></label>
+                                <select class="form-select" id="order_id" name="order_id" required>
+                                    <option value="">Select Order</option>
+                                    {% for order in orders %}
+                                    <option value="{{ order.id }}">
+                                        #{{ order.id }} - {{ order.branch.name }} - {{ order.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="form-text text-muted">Only approved orders without existing deliveries are shown.</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="delivery_amount" class="form-label">Delivery Amount (KSh) <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="delivery_amount" name="delivery_amount" step="0.01" min="0" required>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="delivery_location" class="form-label">Delivery Location <span class="text-danger">*</span></label>
+                                <textarea class="form-control" id="delivery_location" name="delivery_location" rows="3" required placeholder="Enter full delivery address..."></textarea>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="customer_phone" class="form-label">Customer Phone <span class="text-danger">*</span></label>
+                                <input type="tel" class="form-control" id="customer_phone" name="customer_phone" required placeholder="e.g., +254712345678">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="agreed_delivery_time" class="form-label">Agreed Delivery Time</label>
+                                <input type="datetime-local" class="form-control" id="agreed_delivery_time" name="agreed_delivery_time">
+                                <small class="form-text text-muted">Optional: When the customer expects delivery.</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="notes" class="form-label">Notes</label>
+                                <textarea class="form-control" id="notes" name="notes" rows="3" placeholder="Any special delivery instructions or notes..."></textarea>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('deliveries') }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left me-2"></i>Back to Deliveries
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-2"></i>Create Delivery
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Form validation
+    const form = document.getElementById('deliveryForm');
+    form.addEventListener('submit', function(e) {
+        const amount = parseFloat(document.getElementById('delivery_amount').value);
+        const phone = document.getElementById('customer_phone').value;
+        
+        if (amount <= 0) {
+            e.preventDefault();
+            alert('Delivery amount must be greater than 0');
+            return;
+        }
+        
+        // Basic phone validation
+        if (phone && !phone.match(/^[\+]?[0-9\s\-\(\)]{10,}$/)) {
+            e.preventDefault();
+            alert('Please enter a valid phone number');
+            return;
+        }
+    });
+
+    // Auto-fill customer phone when order is selected
+    const orderSelect = document.getElementById('order_id');
+    const phoneInput = document.getElementById('customer_phone');
+    
+    orderSelect.addEventListener('change', function() {
+        // You could implement AJAX to fetch order details and auto-fill phone
+        // For now, we'll just clear the phone field when order changes
+        if (orderSelect.value) {
+            phoneInput.focus();
+        }
+    });
+});
+</script>
+{% endblock %}
+

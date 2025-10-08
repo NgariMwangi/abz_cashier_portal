@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block title %}Delivery #{{ delivery.id }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-truck me-2"></i>Delivery #{{ delivery.id }}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-muted">Delivery Information</h6>
+                            <table class="table table-borderless">
+                                <tr>
+                                    <td><strong>Delivery ID:</strong></td>
+                                    <td>#{{ delivery.id }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Order ID:</strong></td>
+                                    <td>
+                                        <a href="{{ url_for('view_order', order_id=delivery.order_id) }}" class="text-decoration-none">
+                                            #{{ delivery.order_id }}
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Branch:</strong></td>
+                                    <td>{{ delivery.order.branch.name }} - {{ delivery.order.branch.location }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Delivery Amount:</strong></td>
+                                    <td><strong>KSh {{ "{:,.0f}".format(delivery.delivery_amount) }}</strong></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Customer Phone:</strong></td>
+                                    <td>
+                                        <a href="tel:{{ delivery.customer_phone }}" class="text-decoration-none">
+                                            {{ delivery.customer_phone }}
+                                        </a>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Delivery Location:</strong></td>
+                                    <td>{{ delivery.delivery_location }}</td>
+                                </tr>
+                                {% if delivery.agreed_delivery_time %}
+                                <tr>
+                                    <td><strong>Agreed Delivery Time:</strong></td>
+                                    <td>{{ delivery.agreed_delivery_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                                </tr>
+                                {% endif %}
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-muted">Status Information</h6>
+                            <table class="table table-borderless">
+                                <tr>
+                                    <td><strong>Delivery Status:</strong></td>
+                                    <td>
+                                        {% set status_colors = {
+                                            'pending': 'warning',
+                                            'in_transit': 'info',
+                                            'delivered': 'success',
+                                            'cancelled': 'danger',
+                                            'failed': 'danger'
+                                        } %}
+                                        <span class="badge bg-{{ status_colors.get(delivery.delivery_status, 'secondary') }}">
+                                            {{ delivery.delivery_status.replace('_', ' ').title() }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Payment Status:</strong></td>
+                                    <td>
+                                        {% set payment_colors = {
+                                            'pending': 'warning',
+                                            'partial': 'info',
+                                            'paid': 'success',
+                                            'failed': 'danger',
+                                            'refunded': 'secondary'
+                                        } %}
+                                        <span class="badge bg-{{ payment_colors.get(delivery.payment_status, 'secondary') }}">
+                                            {{ delivery.payment_status.replace('_', ' ').title() }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Created:</strong></td>
+                                    <td>{{ delivery.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Last Updated:</strong></td>
+                                    <td>{{ delivery.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    {% if delivery.notes %}
+                    <div class="row">
+                        <div class="col-md-12">
+                            <h6 class="text-muted">Notes</h6>
+                            <div class="alert alert-info">
+                                {{ delivery.notes }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Status Update Section -->
+                    <div class="row mt-4">
+                        <div class="col-md-12">
+                            <h6 class="text-muted">Update Status</h6>
+                            <form method="POST" action="{{ url_for('update_delivery_status', delivery_id=delivery.id) }}" class="d-inline">
+                                <div class="input-group">
+                                    <select class="form-select" name="status" required>
+                                        <option value="">Select new status</option>
+                                        <option value="pending" {% if delivery.delivery_status == 'pending' %}selected{% endif %}>Pending</option>
+                                        <option value="in_transit" {% if delivery.delivery_status == 'in_transit' %}selected{% endif %}>In Transit</option>
+                                        <option value="delivered" {% if delivery.delivery_status == 'delivered' %}selected{% endif %}>Delivered</option>
+                                        <option value="cancelled" {% if delivery.delivery_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                                        <option value="failed" {% if delivery.delivery_status == 'failed' %}selected{% endif %}>Failed</option>
+                                    </select>
+                                    <button type="submit" class="btn btn-outline-primary">
+                                        <i class="fas fa-sync me-1"></i>Update Status
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="row mt-4">
+                        <div class="col-md-12">
+                            <div class="btn-group" role="group">
+                                {% if delivery.delivery_status in ['pending', 'in_transit'] %}
+                                <a href="{{ url_for('edit_delivery', delivery_id=delivery.id) }}" class="btn btn-outline-secondary">
+                                    <i class="fas fa-edit me-2"></i>Edit Delivery
+                                </a>
+                                {% endif %}
+                                <a href="{{ url_for('add_delivery_payment', delivery_id=delivery.id) }}" class="btn btn-outline-success">
+                                    <i class="fas fa-plus me-2"></i>Add Payment
+                                </a>
+                                <a href="{{ url_for('deliveries') }}" class="btn btn-outline-primary">
+                                    <i class="fas fa-arrow-left me-2"></i>Back to Deliveries
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payment Summary Sidebar -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-credit-card me-2"></i>Payment Summary
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-6">
+                            <strong>Total Amount:</strong>
+                        </div>
+                        <div class="col-6 text-end">
+                            KSh {{ "{:,.0f}".format(delivery.delivery_amount) }}
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row">
+                        <div class="col-6">
+                            <strong>Paid:</strong>
+                        </div>
+                        <div class="col-6 text-end">
+                            {% set total_paid = payments|selectattr('payment_status', 'equalto', 'completed')|map(attribute='amount')|sum %}
+                            KSh {{ "{:,.0f}".format(total_paid) }}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-6">
+                            <strong>Balance:</strong>
+                        </div>
+                        <div class="col-6 text-end">
+                            {% set balance = delivery.delivery_amount - total_paid %}
+                            <span class="{% if balance > 0 %}text-danger{% else %}text-success{% endif %}">
+                                KSh {{ "{:,.0f}".format(balance) }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Payments -->
+            {% if payments %}
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="fas fa-history me-2"></i>Payment History
+                    </h6>
+                </div>
+                <div class="card-body">
+                    {% for payment in payments %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <small class="text-muted">{{ payment.payment_method|title }}</small><br>
+                                            <small>KSh {{ "{:,.0f}".format(payment.amount) }}</small>
+                        </div>
+                        <div class="text-end">
+                            {% set payment_colors = {
+                                'pending': 'warning',
+                                'completed': 'success',
+                                'failed': 'danger',
+                                'refunded': 'secondary'
+                            } %}
+                            <span class="badge bg-{{ payment_colors.get(payment.payment_status, 'secondary') }} badge-sm">
+                                {{ payment.payment_status|title }}
+                            </span><br>
+                            <small class="text-muted">{{ payment.created_at.strftime('%m/%d %H:%M') }}</small>
+                        </div>
+                    </div>
+                    {% if not loop.last %}<hr class="my-2">{% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+

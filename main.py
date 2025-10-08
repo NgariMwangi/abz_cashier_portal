@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User, Branch, ProductCatalog, BranchProduct, Order, OrderItem, Payment, StockTransaction, Supplier, PurchaseOrder, PurchaseOrderItem, Quotation, QuotationItem, SubCategory, Expense, ExpenseV2, ExpensePayment
+from models import db, User, Branch, ProductCatalog, BranchProduct, Order, OrderItem, Payment, StockTransaction, Supplier, PurchaseOrder, PurchaseOrderItem, Quotation, QuotationItem, SubCategory, Expense, ExpenseV2, ExpensePayment, Delivery, DeliveryPayment
 from datetime import datetime, timedelta
 import os
 from sqlalchemy import func
@@ -1028,13 +1028,14 @@ def daily_sales_details(date):
 @app.route('/sales-report/export-pdf')
 @cashier_required
 def export_sales_report_pdf():
-    from reportlab.lib.pagesizes import letter, A4
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
     from reportlab.lib.units import inch
     from io import BytesIO
     from datetime import datetime, timedelta
+    import os
     
     # Get date range from query parameters
     start_date = request.args.get('start_date', (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
@@ -1047,12 +1048,20 @@ def export_sales_report_pdf():
     # Get accessible branch IDs for current user
     accessible_branch_ids = get_user_accessible_branch_ids()
     
-    # Get sales data (same logic as sales_report route)
-    sales_data_query = db.session.query(
-        func.date(Payment.created_at).label('date'),
-        func.count(Payment.id).label('payment_count'),
-        func.sum(Payment.amount).label('total_amount')
-    ).join(Order).filter(
+    # Get branch information for the accessible branches
+    accessible_branches = current_user.get_accessible_branches()
+    branch_names = [branch.name for branch in accessible_branches]
+    
+    # Determine branch display name
+    if len(branch_names) == 1:
+        branch_display_name = branch_names[0]
+    elif len(branch_names) > 1:
+        branch_display_name = "All Branches"
+    else:
+        branch_display_name = "All Branches"
+    
+    # Get all payments for the date range (filtered by accessible branches)
+    payments_query = db.session.query(Payment).join(Order).filter(
         Payment.payment_status == 'completed',
         Payment.created_at >= start_dt,
         Payment.created_at < end_dt
@@ -1060,136 +1069,373 @@ def export_sales_report_pdf():
     
     # Filter by accessible branches
     if accessible_branch_ids:
-        sales_data_query = sales_data_query.filter(Order.branchid.in_(accessible_branch_ids))
+        payments_query = payments_query.filter(Order.branchid.in_(accessible_branch_ids))
     
-    sales_data = sales_data_query.group_by(func.date(Payment.created_at)).order_by(func.date(Payment.created_at)).all()
+    payments = payments_query.order_by(Payment.created_at.desc()).all()
     
-    # Calculate totals
-    total_revenue = sum(row.total_amount for row in sales_data if row.total_amount)
-    total_payments = sum(row.payment_count for row in sales_data)
+    # Get order details for each payment
+    payment_details = []
+    total_revenue = 0
     
-    # Create PDF
+    for payment in payments:
+        order = Order.query.get(payment.orderid)
+        if order:
+            # Get order items
+            order_items = []
+            for item in order.order_items:
+                if item.branch_product and item.branch_product.catalog_product:
+                    product_name = item.branch_product.catalog_product.name
+                else:
+                    product_name = item.product_name or 'Manual Item'
+                order_items.append({
+                    'product_name': product_name,
+                    'quantity': float(item.quantity),
+                    'unit_price': float(item.final_price or item.original_price or 0),
+                    'total_price': float(item.final_price or item.original_price or 0) * float(item.quantity)
+                })
+            
+            # Determine customer/sales person name based on order type
+            if order.ordertype and order.ordertype.name.lower() == 'walk-in':
+                # For walk-in orders, show sales person name (user who created the order)
+                display_name = f"{order.user.firstname} {order.user.lastname} (Sales Person)"
+                name_type = "sales_person"
+            else:
+                # For regular orders, show customer name
+                display_name = f"{order.user.firstname} {order.user.lastname}"
+                name_type = "customer"
+            
+            payment_details.append({
+                'payment': payment,
+                'order': order,
+                'order_items': order_items,
+                'customer_name': display_name,
+                'name_type': name_type,
+                'payment_method': payment.payment_method,
+                'payment_time': payment.created_at,
+                'branch_name': order.branch.name if order.branch else 'Unknown Branch'
+            })
+            
+            total_revenue += float(payment.amount)
+    
+    # Create PDF with better margins to match reference
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
-    story = []
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
+    elements = []
     
-    # Define styles
+    # Define styles to match reference PDF
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'CustomTitle',
+    
+    # Report Title Style
+    report_title_style = ParagraphStyle(
+        'ReportTitle',
         parent=styles['Heading1'],
-        fontSize=18,
-        spaceAfter=30,
+        fontSize=22,
+        spaceAfter=25,
         alignment=1,  # Center alignment
-        textColor=colors.darkblue
+        textColor=colors.black,
+        fontName='Helvetica-Bold'
     )
     
+    # Report Details Style
+    report_details_style = ParagraphStyle(
+        'ReportDetails',
+        parent=styles['Normal'],
+        fontSize=12,
+        spaceAfter=5,
+        alignment=0,  # Left alignment
+        textColor=colors.black,
+        fontName='Helvetica'
+    )
+    
+    # Section Heading Style
     heading_style = ParagraphStyle(
-        'CustomHeading',
+        'SectionHeading',
         parent=styles['Heading2'],
-        fontSize=14,
-        spaceAfter=12,
-        textColor=colors.darkblue
+        fontSize=16,
+        spaceAfter=15,
+        textColor=colors.darkblue,
+        fontName='Helvetica-Bold'
     )
     
+    # Normal text style
     normal_style = styles['Normal']
     
-    # Title
-    story.append(Paragraph("ABZ HARDWARE - DAILY SALES REPORT", title_style))
-    story.append(Spacer(1, 12))
+    # Recreate the ABZ Hardware letterhead manually
     
-    # Report period
-    story.append(Paragraph(f"<b>Report Period:</b> {start_date} to {end_date}", normal_style))
-    story.append(Paragraph(f"<b>Generated:</b> {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", normal_style))
-    story.append(Spacer(1, 20))
+    # Try to load the logo for the left side
+    try:
+        logo_path = os.path.join(os.path.dirname(__file__), 'static', 'logo.png')
+        if os.path.exists(logo_path):
+            logo_image = Image(logo_path, width=1.5*inch, height=1*inch)
+            logo_cell = logo_image
+        else:
+            # Fallback to text if logo not found
+            logo_cell = Paragraph('''
+            <para align=left>
+            <b><font size=24 color="#1a365d">🔧ABZ</font></b><br/>
+            <b><font size=16 color="#f4b942">HARDWARE</font></b><br/>
+            <b><font size=14 color="#1a365d">LIMITED</font></b>
+            </para>
+            ''', normal_style)
+    except Exception as e:
+        print(f"Error loading logo: {e}")
+        # Fallback to text if logo fails to load
+        logo_cell = Paragraph('''
+        <para align=left>
+        <b><font size=24 color="#1a365d">🔧ABZ</font></b><br/>
+        <b><font size=16 color="#f4b942">HARDWARE</font></b><br/>
+        <b><font size=14 color="#1a365d">LIMITED</font></b>
+        </para>
+        ''', normal_style)
     
-    # Summary section
-    story.append(Paragraph("SUMMARY", heading_style))
+    # Create the letterhead table for proper layout
+    letterhead_data = [[
+        # Left side - Logo Image
+        logo_cell,
+        
+        # Right side - Contact Information
+        Paragraph('''
+        <para align=right>
+        <b><font size=11 color="#1a365d">Kombo Munyiri Road,</font></b><br/>
+        <b><font size=11 color="#1a365d">Gikomba, Nairobi, Kenya</font></b><br/>
+        <font size=9 color="#666666">0711 732 341 or 0725 000 055</font><br/>
+        <font size=9 color="#666666">info@abzhardware.co.ke</font><br/>
+        <font size=9 color="#666666">www.abzhardware.co.ke</font>
+        </para>
+        ''', normal_style)
+    ]]
     
-    summary_data = [
-        ['Total Revenue', f"KSH {total_revenue:,.2f}"],
-        ['Total Payments', f"{total_payments:,}"],
-        ['Average per Payment', f"KSH {(total_revenue / total_payments):,.2f}" if total_payments > 0 else "KSH 0.00"]
-    ]
-    
-    summary_table = Table(summary_data, colWidths=[2*inch, 2*inch])
-    summary_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.lightgrey),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    # Create letterhead table
+    letterhead_table = Table(letterhead_data, colWidths=[3.5*inch, 3.5*inch])
+    letterhead_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (0, 0), 0),
+        ('RIGHTPADDING', (1, 0), (1, 0), 0),
     ]))
     
-    story.append(summary_table)
-    story.append(Spacer(1, 20))
+    elements.append(letterhead_table)
+    elements.append(Spacer(1, 10))
     
-    # Detailed sales data
-    if sales_data:
-        story.append(Paragraph("DAILY SALES BREAKDOWN", heading_style))
+    # Add the colored line separator (yellow and dark blue)
+    separator_data = [[""]]
+    separator_table = Table(separator_data, colWidths=[7*inch], rowHeights=[0.05*inch])
+    separator_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#f4b942')),  # Yellow color
+    ]))
+    
+    elements.append(separator_table)
+    elements.append(Spacer(1, 30))
+    
+    # Report Title
+    elements.append(Paragraph("SALES REPORT", report_title_style))
+    
+    # Report details - Better formatting
+    elements.append(Paragraph(f"Period: {start_dt.strftime('%B %d, %Y')} - {datetime.strptime(end_date, '%Y-%m-%d').strftime('%B %d, %Y')}", report_details_style))
+    elements.append(Paragraph(f"Branch: {branch_display_name.upper()}", report_details_style))
+    # Get branch location if available
+    branch_location = accessible_branches[0].location if len(accessible_branches) == 1 else "Multiple Locations"
+    elements.append(Paragraph(f"Location: {branch_location.upper()}", report_details_style))
+    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", report_details_style))
+    elements.append(Spacer(1, 25))
+    
+    # Calculate additional metrics
+    total_items_sold = len(set(item['product_name'] for detail in payment_details for item in detail['order_items']))
+    
+    # Calculate actual profit from final_price vs buying_price directly from OrderItems
+    total_profit = 0
+    items_with_profit_data = 0
+    items_without_profit_data = 0
+    
+    for detail in payment_details:
+        order = detail['order']
+        for order_item in order.order_items:
+            # Get final_price and buying_price directly from OrderItem
+            final_price = float(order_item.final_price or 0)
+            buying_price = float(order_item.buying_price or 0)
+            quantity = float(order_item.quantity or 0)
+            
+            # Calculate profit: (final_price - buying_price) * quantity
+            if buying_price > 0 and final_price > 0:
+                profit_per_unit = final_price - buying_price
+                profit_for_item = profit_per_unit * quantity
+                total_profit += profit_for_item
+                items_with_profit_data += 1
+            else:
+                items_without_profit_data += 1
+    
+    # If we couldn't calculate profit from actual prices, fall back to estimation
+    if total_profit == 0 and total_revenue > 0:
+        # Estimate 20% profit margin if no buying prices available
+        total_profit = total_revenue * 0.2
+        print(f"Profit estimation used: {total_profit} (20% of revenue)")
+    else:
+        print(f"Actual profit calculated: {total_profit}")
+        print(f"Items with profit data: {items_with_profit_data}, Items without: {items_without_profit_data}")
+    
+    # Summary section
+    elements.append(Paragraph("SUMMARY", heading_style))
+    
+    summary_data = [
+        ['Metric', 'Value'],
+        ['Total Revenue', f"KSh {total_revenue:,.0f}"],
+        ['Total Payments', f"{len(payments):,}"],
+        ['Total Items Sold', f"{total_items_sold:,}"],
+        ['Total Profit', f"KSh {total_profit:,.0f}"]
+    ]
+    
+    summary_table = Table(summary_data, colWidths=[2.8*inch, 2.8*inch])
+    summary_table.setStyle(TableStyle([
+        # Header row - Enhanced styling
+        ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 15),
+        ('TOPPADDING', (0, 0), (-1, 0), 15),
         
-        # Table headers
-        table_data = [['Date', 'Payments', 'Revenue (KSH)', 'Average (KSH)']]
+        # Data rows - Enhanced styling
+        ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 11),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 12),
+        ('TOPPADDING', (0, 1), (-1, -1), 12),
+        ('ALIGN', (0, 1), (0, -1), 'LEFT'),  # Metric names left aligned
+        ('ALIGN', (1, 1), (1, -1), 'CENTER'),  # Values center aligned
         
-        # Add sales data rows
-        for row in sales_data:
-            date_str = row.date.strftime('%B %d, %Y')
-            avg_amount = (row.total_amount / row.payment_count) if row.payment_count > 0 else 0
-            table_data.append([
-                date_str,
-                str(row.payment_count),
-                f"{row.total_amount:,.2f}",
-                f"{avg_amount:,.2f}"
+        # Grid - Enhanced styling
+        ('GRID', (0, 0), (-1, -1), 1.5, colors.black),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
+    ]))
+    
+    elements.append(summary_table)
+    elements.append(Spacer(1, 20))
+    
+    # Payment Details Table
+    if payment_details:
+        elements.append(Paragraph("PAYMENT DETAILS", heading_style))
+        
+        # Create payment details table
+        payment_table_data = [['Payment ID', 'Order ID', 'Amount', 'Method', 'Status', 'Time']]
+        for detail in payment_details:
+            payment_table_data.append([
+                str(detail['payment'].id),
+                str(detail['order'].id),
+                f"KSh {detail['payment'].amount:,.0f}",
+                detail['payment_method'],
+                'completed',
+                detail['payment_time'].strftime('%H:%M')
             ])
         
-        # Add totals row
-        table_data.append([
-            'TOTAL',
-            str(total_payments),
-            f"{total_revenue:,.2f}",
-            f"{(total_revenue / total_payments):,.2f}" if total_payments > 0 else "0.00"
-        ])
-        
-        # Create table
-        sales_table = Table(table_data, colWidths=[2.5*inch, 1*inch, 1.5*inch, 1.5*inch])
-        sales_table.setStyle(TableStyle([
-            # Header row
+        payment_table = Table(payment_table_data, colWidths=[1*inch, 1*inch, 1.5*inch, 1.5*inch, 1*inch, 1*inch])
+        payment_table.setStyle(TableStyle([
+            # Header row - Enhanced styling
             ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 10),
             
-            # Data rows
-            ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
-            ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -2), 9),
-            ('BOTTOMPADDING', (0, 1), (-1, -2), 8),
+            # Data rows - Enhanced styling
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
             
-            # Totals row
-            ('BACKGROUND', (0, -1), (-1, -1), colors.lightblue),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, -1), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, -1), (-1, -1), 12),
-            
-            # Grid
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            # Grid - Enhanced styling
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
         ]))
         
-        story.append(sales_table)
+        elements.append(payment_table)
+        elements.append(Spacer(1, 20))
+        
+        # Sold Items Table
+        elements.append(Paragraph("SOLD ITEMS", heading_style))
+        
+        # Collect all items from all orders
+        all_items = []
+        for detail in payment_details:
+            order = detail['order']
+            for order_item in order.order_items:
+                # Get product name
+                if order_item.branch_product and order_item.branch_product.catalog_product:
+                    product_name = order_item.branch_product.catalog_product.name
+                else:
+                    product_name = order_item.product_name or 'Manual Item'
+                
+                # Get prices directly from OrderItem
+                final_price = float(order_item.final_price or 0)
+                buying_price = float(order_item.buying_price or 0)
+                quantity = float(order_item.quantity or 0)
+                total_price = final_price * quantity
+                
+                # Calculate profit: (final_price - buying_price) * quantity
+                if buying_price > 0 and final_price > 0:
+                    profit_per_unit = final_price - buying_price
+                    profit = profit_per_unit * quantity
+                else:
+                    # Fall back to 20% estimation if no buying price available
+                    profit = total_price * 0.2
+                
+                all_items.append({
+                    'product_name': product_name,
+                    'quantity': quantity,
+                    'unit_price': final_price,
+                    'total_price': total_price,
+                    'profit': profit
+                })
+        
+        # Create sold items table
+        sold_items_data = [['Product', 'Quantity', 'Unit Price', 'Total', 'Profit']]
+        for item in all_items:
+            sold_items_data.append([
+                item['product_name'],
+                str(item['quantity']),
+                f"KSh {item['unit_price']:,.0f}",
+                f"KSh {item['total_price']:,.0f}",
+                f"KSh {item['profit']:,.0f}"
+            ])
+        
+        sold_items_table = Table(sold_items_data, colWidths=[2.8*inch, 1*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+        sold_items_table.setStyle(TableStyle([
+            # Header row - Enhanced styling
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 10),
+            
+            # Data rows - Enhanced styling
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),  # Product names left aligned
+            ('ALIGN', (1, 1), (4, -1), 'CENTER'),  # Other columns center aligned
+            
+            # Grid - Enhanced styling
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
+        ]))
+        
+        elements.append(sold_items_table)
     else:
-        story.append(Paragraph("No sales data available for the selected period.", normal_style))
+        elements.append(Paragraph("No payments found for this date range.", normal_style))
     
     # Build PDF
-    doc.build(story)
+    doc.build(elements)
     buffer.seek(0)
     
-    # Generate filename
-    filename = f"daily_sales_report_{start_date}_to_{end_date}.pdf"
+    # Generate filename with the requested format
+    branch_slug = branch_display_name.lower().replace(' ', '_').replace('&', 'and')
+    filename = f"sales_report_{branch_slug}_{start_date}_to_{end_date}.pdf"
     
     return send_file(
         buffer,
@@ -1203,12 +1449,13 @@ def export_sales_report_pdf():
 @cashier_required
 def export_daily_sales_pdf(date):
     from reportlab.lib.pagesizes import A4
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
     from reportlab.lib.units import inch
     from io import BytesIO
     from datetime import datetime
+    import os
     
     try:
         # Parse the date
@@ -1288,31 +1535,10 @@ def export_daily_sales_pdf(date):
         # Create PDF with better margins to match reference
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
-        story = []
+        elements = []
         
         # Define styles to match reference PDF
         styles = getSampleStyleSheet()
-        
-        # Company Header Styles - Matching reference format
-        company_title_style = ParagraphStyle(
-            'CompanyTitle',
-            parent=styles['Heading1'],
-            fontSize=28,
-            spaceAfter=8,
-            alignment=1,  # Center alignment
-            textColor=colors.darkblue,
-            fontName='Helvetica-Bold'
-        )
-        
-        company_subtitle_style = ParagraphStyle(
-            'CompanySubtitle',
-            parent=styles['Heading2'],
-            fontSize=16,
-            spaceAfter=25,
-            alignment=1,  # Center alignment
-            textColor=colors.darkblue,
-            fontName='Helvetica'
-        )
         
         # Report Title Style
         report_title_style = ParagraphStyle(
@@ -1349,22 +1575,83 @@ def export_daily_sales_pdf(date):
         # Normal text style
         normal_style = styles['Normal']
         
-        # Company Header - Matching reference format
-        story.append(Paragraph("ABZ HARDWARE LIMITED", company_title_style))
-        story.append(Paragraph("Your Trusted Hardware Partner", company_subtitle_style))
-        story.append(Spacer(1, 10))
+        # Recreate the ABZ Hardware letterhead manually
+        
+        # Try to load the logo for the left side
+        try:
+            logo_path = os.path.join(os.path.dirname(__file__), 'static', 'logo.png')
+            if os.path.exists(logo_path):
+                logo_image = Image(logo_path, width=1.5*inch, height=1*inch)
+                logo_cell = logo_image
+            else:
+                # Fallback to text if logo not found
+                logo_cell = Paragraph('''
+                <para align=left>
+                <b><font size=24 color="#1a365d">🔧ABZ</font></b><br/>
+                <b><font size=16 color="#f4b942">HARDWARE</font></b><br/>
+                <b><font size=14 color="#1a365d">LIMITED</font></b>
+                </para>
+                ''', normal_style)
+        except Exception as e:
+            print(f"Error loading logo: {e}")
+            # Fallback to text if logo fails to load
+            logo_cell = Paragraph('''
+            <para align=left>
+            <b><font size=24 color="#1a365d">🔧ABZ</font></b><br/>
+            <b><font size=16 color="#f4b942">HARDWARE</font></b><br/>
+            <b><font size=14 color="#1a365d">LIMITED</font></b>
+            </para>
+            ''', normal_style)
+        
+        # Create the letterhead table for proper layout
+        letterhead_data = [[
+            # Left side - Logo Image
+            logo_cell,
+            
+            # Right side - Contact Information
+            Paragraph('''
+            <para align=right>
+            <b><font size=11 color="#1a365d">Kombo Munyiri Road,</font></b><br/>
+            <b><font size=11 color="#1a365d">Gikomba, Nairobi, Kenya</font></b><br/>
+            <font size=9 color="#666666">0711 732 341 or 0725 000 055</font><br/>
+            <font size=9 color="#666666">info@abzhardware.co.ke</font><br/>
+            <font size=9 color="#666666">www.abzhardware.co.ke</font>
+            </para>
+            ''', normal_style)
+        ]]
+        
+        # Create letterhead table
+        letterhead_table = Table(letterhead_data, colWidths=[3.5*inch, 3.5*inch])
+        letterhead_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (0, 0), 0),
+            ('RIGHTPADDING', (1, 0), (1, 0), 0),
+        ]))
+        
+        elements.append(letterhead_table)
+        elements.append(Spacer(1, 10))
+        
+        # Add the colored line separator (yellow and dark blue)
+        separator_data = [[""]]
+        separator_table = Table(separator_data, colWidths=[7*inch], rowHeights=[0.05*inch])
+        separator_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#f4b942')),  # Yellow color
+        ]))
+        
+        elements.append(separator_table)
+        elements.append(Spacer(1, 30))
         
         # Report Title
-        story.append(Paragraph("DAILY SALES REPORT", report_title_style))
+        elements.append(Paragraph("DAILY SALES REPORT", report_title_style))
         
         # Report details - Better formatting
-        story.append(Paragraph(f"Date: {date_obj.strftime('%A, %B %d, %Y')}", report_details_style))
-        story.append(Paragraph(f"Branch: {branch_display_name.upper()}", report_details_style))
+        elements.append(Paragraph(f"Date: {date_obj.strftime('%A, %B %d, %Y')}", report_details_style))
+        elements.append(Paragraph(f"Branch: {branch_display_name.upper()}", report_details_style))
         # Get branch location if available
         branch_location = accessible_branches[0].location if len(accessible_branches) == 1 else "Multiple Locations"
-        story.append(Paragraph(f"Location: {branch_location.upper()}", report_details_style))
-        story.append(Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", report_details_style))
-        story.append(Spacer(1, 25))
+        elements.append(Paragraph(f"Location: {branch_location.upper()}", report_details_style))
+        elements.append(Paragraph(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", report_details_style))
+        elements.append(Spacer(1, 25))
         
         # Calculate additional metrics
         total_items_sold = len(set(item['product_name'] for detail in payment_details for item in detail['order_items']))
@@ -1401,7 +1688,7 @@ def export_daily_sales_pdf(date):
             print(f"Items with profit data: {items_with_profit_data}, Items without: {items_without_profit_data}")
         
         # Summary section
-        story.append(Paragraph("SUMMARY", heading_style))
+        elements.append(Paragraph("SUMMARY", heading_style))
         
         summary_data = [
             ['Metric', 'Value'],
@@ -1436,12 +1723,12 @@ def export_daily_sales_pdf(date):
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
         ]))
         
-        story.append(summary_table)
-        story.append(Spacer(1, 20))
+        elements.append(summary_table)
+        elements.append(Spacer(1, 20))
         
         # Payment Details Table
         if payment_details:
-            story.append(Paragraph("PAYMENT DETAILS", heading_style))
+            elements.append(Paragraph("PAYMENT DETAILS", heading_style))
             
             # Create payment details table
             payment_table_data = [['Payment ID', 'Order ID', 'Amount', 'Method', 'Status', 'Time']]
@@ -1478,11 +1765,11 @@ def export_daily_sales_pdf(date):
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
             ]))
             
-            story.append(payment_table)
-            story.append(Spacer(1, 20))
+            elements.append(payment_table)
+            elements.append(Spacer(1, 20))
             
             # Sold Items Table
-            story.append(Paragraph("SOLD ITEMS", heading_style))
+            elements.append(Paragraph("SOLD ITEMS", heading_style))
             
             # Collect all items from all orders
             all_items = []
@@ -1553,12 +1840,12 @@ def export_daily_sales_pdf(date):
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
             ]))
             
-            story.append(sold_items_table)
+            elements.append(sold_items_table)
         else:
-            story.append(Paragraph("No payments found for this date.", normal_style))
+            elements.append(Paragraph("No payments found for this date.", normal_style))
         
         # Build PDF
-        doc.build(story)
+        doc.build(elements)
         buffer.seek(0)
         
         # Generate filename with the requested format
@@ -1941,8 +2228,8 @@ def expenses_v2():
     if category_filter != 'all':
         query = query.filter_by(category=category_filter)
     
-    # Hide restricted categories (rent and salaries) from cashiers
-    query = query.filter(~ExpenseV2.category.in_(['rent', 'salaries']))
+    # Hide restricted categories (salaries only) from cashiers
+    query = query.filter(~ExpenseV2.category.in_(['salaries']))
     
     # Get expenses with pagination
     expenses = query.order_by(ExpenseV2.created_at.desc()).paginate(
@@ -2055,8 +2342,8 @@ def view_expense_v2(expense_id):
         flash('You do not have access to this expense.', 'error')
         return redirect(url_for('expenses_v2'))
     
-    # Hide restricted categories (rent and salaries) from cashiers
-    if expense.category in ['rent', 'salaries']:
+    # Hide restricted categories (salaries only) from cashiers
+    if expense.category in ['salaries']:
         flash('You do not have access to this expense.', 'error')
         return redirect(url_for('expenses_v2'))
     
@@ -2079,8 +2366,8 @@ def edit_expense_v2(expense_id):
         flash('You do not have access to this expense.', 'error')
         return redirect(url_for('expenses_v2'))
     
-    # Hide restricted categories (rent and salaries) from cashiers
-    if expense.category in ['rent', 'salaries']:
+    # Hide restricted categories (salaries only) from cashiers
+    if expense.category in ['salaries']:
         flash('You do not have access to this expense.', 'error')
         return redirect(url_for('expenses_v2'))
     
@@ -2091,6 +2378,31 @@ def edit_expense_v2(expense_id):
     
     if request.method == 'POST':
         try:
+            # Check if this is a receipt deletion request
+            action = request.form.get('action')
+            if action == 'delete_receipt':
+                receipt_url = request.form.get('receipt_url')
+                if receipt_url and receipt_url in expense.receipt_list:
+                    # Remove the receipt from the list
+                    updated_receipts = [url for url in expense.receipt_list if url != receipt_url]
+                    expense.receipt_urls = updated_receipts if updated_receipts else None
+                    
+                    # Delete from Cloudinary
+                    try:
+                        # Extract public_id from Cloudinary URL
+                        if 'cloudinary.com' in receipt_url:
+                            public_id = receipt_url.split('/')[-1].split('.')[0]
+                            delete_from_cloudinary(public_id)
+                    except Exception as e:
+                        print(f"Failed to delete from Cloudinary: {e}")
+                    
+                    db.session.commit()
+                    flash('Receipt deleted successfully!', 'success')
+                else:
+                    flash('Receipt not found.', 'error')
+                
+                return redirect(url_for('edit_expense_v2', expense_id=expense_id))
+            
             # Get form data
             title = request.form.get('title')
             description = request.form.get('description')
@@ -2175,8 +2487,8 @@ def add_expense_payment(expense_id):
         flash('You do not have access to this expense.', 'error')
         return redirect(url_for('expenses_v2'))
     
-    # Hide restricted categories (rent and salaries) from cashiers
-    if expense.category in ['rent', 'salaries']:
+    # Hide restricted categories (salaries only) from cashiers
+    if expense.category in ['salaries']:
         flash('You do not have access to this expense.', 'error')
         return redirect(url_for('expenses_v2'))
     
@@ -2432,6 +2744,298 @@ def edit_expense(expense_id):
     accessible_branches = current_user.get_accessible_branches()
     
     return render_template('edit_expense.html', expense=expense, branches=accessible_branches)
+
+# ==================== DELIVERY MANAGEMENT ====================
+
+@app.route('/deliveries')
+@cashier_required
+def deliveries():
+    """List all deliveries with filters and pagination"""
+    page = request.args.get('page', 1, type=int)
+    status_filter = request.args.get('status', 'all')
+    branch_filter = request.args.get('branch', 'all')
+    
+    # Get accessible branch IDs for current user
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    
+    # Base query with joins
+    query = db.session.query(Delivery).join(Order).join(Branch)
+    
+    # Filter by accessible branches
+    if accessible_branch_ids:
+        query = query.filter(Order.branchid.in_(accessible_branch_ids))
+    
+    # Apply filters
+    if status_filter != 'all':
+        query = query.filter(Delivery.delivery_status == status_filter)
+    
+    if branch_filter != 'all':
+        query = query.filter(Order.branchid == branch_filter)
+    
+    # Get deliveries with pagination
+    deliveries = query.order_by(Delivery.created_at.desc()).paginate(
+        page=page, per_page=20, error_out=False
+    )
+    
+    # Get unique statuses for filter dropdown
+    statuses = ['pending', 'in_transit', 'delivered', 'cancelled', 'failed']
+    
+    # Get accessible branches for filter dropdown
+    accessible_branches = current_user.get_accessible_branches()
+    
+    return render_template('deliveries.html', deliveries=deliveries, 
+                         statuses=statuses, branches=accessible_branches,
+                         current_status=status_filter, current_branch=branch_filter)
+
+@app.route('/deliveries/create', methods=['GET', 'POST'])
+@cashier_required
+def create_delivery():
+    """Create a new delivery for an order"""
+    if request.method == 'POST':
+        try:
+            # Get form data
+            order_id = request.form.get('order_id')
+            delivery_amount = request.form.get('delivery_amount')
+            delivery_location = request.form.get('delivery_location')
+            customer_phone = request.form.get('customer_phone')
+            agreed_delivery_time = request.form.get('agreed_delivery_time')
+            notes = request.form.get('notes')
+            
+            # Validate required fields
+            if not all([order_id, delivery_amount, delivery_location, customer_phone]):
+                flash('Please fill in all required fields.', 'error')
+                return redirect(url_for('create_delivery'))
+            
+            # Check if order exists and user has access
+            order = Order.query.get(order_id)
+            if not order:
+                flash('Order not found.', 'error')
+                return redirect(url_for('create_delivery'))
+            
+            accessible_branch_ids = get_user_accessible_branch_ids()
+            if order.branchid not in accessible_branch_ids:
+                flash('You do not have access to this order.', 'error')
+                return redirect(url_for('create_delivery'))
+            
+            # Check if delivery already exists for this order
+            existing_delivery = Delivery.query.filter_by(order_id=order_id).first()
+            if existing_delivery:
+                flash('A delivery already exists for this order.', 'error')
+                return redirect(url_for('create_delivery'))
+            
+            # Create delivery
+            delivery = Delivery(
+                order_id=int(order_id),
+                delivery_amount=float(delivery_amount),
+                delivery_location=delivery_location,
+                customer_phone=customer_phone,
+                agreed_delivery_time=datetime.strptime(agreed_delivery_time, '%Y-%m-%dT%H:%M') if agreed_delivery_time else None,
+                notes=notes,
+                delivery_status='pending',
+                payment_status='pending'
+            )
+            
+            db.session.add(delivery)
+            db.session.commit()
+            
+            flash('Delivery created successfully!', 'success')
+            return redirect(url_for('view_delivery', delivery_id=delivery.id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error creating delivery: {str(e)}', 'error')
+            return redirect(url_for('create_delivery'))
+    
+    # GET request - show form
+    # Get orders that don't have deliveries yet and user has access to
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    orders_query = Order.query.filter_by(approvalstatus=True)  # Only approved orders
+    
+    if accessible_branch_ids:
+        orders_query = orders_query.filter(Order.branchid.in_(accessible_branch_ids))
+    
+    # Exclude orders that already have deliveries
+    orders_with_deliveries = db.session.query(Delivery.order_id).subquery()
+    orders_query = orders_query.filter(~Order.id.in_(orders_with_deliveries))
+    
+    orders = orders_query.order_by(Order.created_at.desc()).all()
+    
+    return render_template('create_delivery.html', orders=orders)
+
+@app.route('/deliveries/<int:delivery_id>')
+@cashier_required
+def view_delivery(delivery_id):
+    """View delivery details"""
+    # Get delivery with access control
+    delivery = Delivery.query.get_or_404(delivery_id)
+    
+    # Check if user has access to this delivery's order branch
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    if delivery.order.branchid not in accessible_branch_ids:
+        flash('You do not have access to this delivery.', 'error')
+        return redirect(url_for('deliveries'))
+    
+    # Get delivery payments
+    payments = DeliveryPayment.query.filter_by(delivery_id=delivery_id).order_by(DeliveryPayment.created_at.desc()).all()
+    
+    return render_template('view_delivery.html', delivery=delivery, payments=payments)
+
+@app.route('/deliveries/<int:delivery_id>/edit', methods=['GET', 'POST'])
+@cashier_required
+def edit_delivery(delivery_id):
+    """Edit delivery details"""
+    # Get delivery with access control
+    delivery = Delivery.query.get_or_404(delivery_id)
+    
+    # Check if user has access to this delivery's order branch
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    if delivery.order.branchid not in accessible_branch_ids:
+        flash('You do not have access to this delivery.', 'error')
+        return redirect(url_for('deliveries'))
+    
+    # Only allow editing if delivery is pending or in_transit
+    if delivery.delivery_status not in ['pending', 'in_transit']:
+        flash('You can only edit pending or in-transit deliveries.', 'error')
+        return redirect(url_for('view_delivery', delivery_id=delivery_id))
+    
+    if request.method == 'POST':
+        try:
+            # Get form data
+            delivery_amount = request.form.get('delivery_amount')
+            delivery_location = request.form.get('delivery_location')
+            customer_phone = request.form.get('customer_phone')
+            agreed_delivery_time = request.form.get('agreed_delivery_time')
+            delivery_status = request.form.get('delivery_status')
+            notes = request.form.get('notes')
+            
+            # Validate required fields
+            if not all([delivery_amount, delivery_location, customer_phone]):
+                flash('Please fill in all required fields.', 'error')
+                return redirect(url_for('edit_delivery', delivery_id=delivery_id))
+            
+            # Update delivery
+            delivery.delivery_amount = float(delivery_amount)
+            delivery.delivery_location = delivery_location
+            delivery.customer_phone = customer_phone
+            delivery.agreed_delivery_time = datetime.strptime(agreed_delivery_time, '%Y-%m-%dT%H:%M') if agreed_delivery_time else None
+            delivery.delivery_status = delivery_status
+            delivery.notes = notes
+            delivery.updated_at = datetime.now()
+            
+            db.session.commit()
+            
+            flash('Delivery updated successfully!', 'success')
+            return redirect(url_for('view_delivery', delivery_id=delivery_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating delivery: {str(e)}', 'error')
+            return redirect(url_for('edit_delivery', delivery_id=delivery_id))
+    
+    # GET request - show form
+    return render_template('edit_delivery.html', delivery=delivery)
+
+@app.route('/deliveries/<int:delivery_id>/update-status', methods=['POST'])
+@cashier_required
+def update_delivery_status(delivery_id):
+    """Update delivery status"""
+    # Get delivery with access control
+    delivery = Delivery.query.get_or_404(delivery_id)
+    
+    # Check if user has access to this delivery's order branch
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    if delivery.order.branchid not in accessible_branch_ids:
+        flash('You do not have access to this delivery.', 'error')
+        return redirect(url_for('deliveries'))
+    
+    try:
+        new_status = request.form.get('status')
+        if new_status not in ['pending', 'in_transit', 'delivered', 'cancelled', 'failed']:
+            flash('Invalid status.', 'error')
+            return redirect(url_for('view_delivery', delivery_id=delivery_id))
+        
+        delivery.delivery_status = new_status
+        delivery.updated_at = datetime.now()
+        
+        db.session.commit()
+        
+        flash(f'Delivery status updated to {new_status.replace("_", " ").title()}!', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error updating delivery status: {str(e)}', 'error')
+    
+    return redirect(url_for('view_delivery', delivery_id=delivery_id))
+
+@app.route('/deliveries/<int:delivery_id>/payments/add', methods=['GET', 'POST'])
+@cashier_required
+def add_delivery_payment(delivery_id):
+    """Add payment for a delivery"""
+    # Get delivery with access control
+    delivery = Delivery.query.get_or_404(delivery_id)
+    
+    # Check if user has access to this delivery's order branch
+    accessible_branch_ids = get_user_accessible_branch_ids()
+    if delivery.order.branchid not in accessible_branch_ids:
+        flash('You do not have access to this delivery.', 'error')
+        return redirect(url_for('deliveries'))
+    
+    if request.method == 'POST':
+        try:
+            # Get form data
+            amount = request.form.get('amount')
+            payment_method = request.form.get('payment_method')
+            payment_status = request.form.get('payment_status')
+            transaction_id = request.form.get('transaction_id')
+            reference_number = request.form.get('reference_number')
+            notes = request.form.get('notes')
+            payment_date = request.form.get('payment_date')
+            
+            # Validate required fields
+            if not all([amount, payment_method, payment_status]):
+                flash('Please fill in all required fields.', 'error')
+                return redirect(url_for('add_delivery_payment', delivery_id=delivery_id))
+            
+            # Create delivery payment
+            payment = DeliveryPayment(
+                delivery_id=delivery_id,
+                user_id=current_user.id,
+                amount=float(amount),
+                payment_method=payment_method,
+                payment_status=payment_status,
+                transaction_id=transaction_id,
+                reference_number=reference_number,
+                notes=notes,
+                payment_date=datetime.strptime(payment_date, '%Y-%m-%dT%H:%M') if payment_date else None
+            )
+            
+            db.session.add(payment)
+            
+            # Update delivery payment status based on payments
+            total_paid = db.session.query(db.func.sum(DeliveryPayment.amount)).filter(
+                DeliveryPayment.delivery_id == delivery_id,
+                DeliveryPayment.payment_status == 'completed'
+            ).scalar() or 0
+            
+            if total_paid >= delivery.delivery_amount:
+                delivery.payment_status = 'paid'
+            elif total_paid > 0:
+                delivery.payment_status = 'partial'
+            else:
+                delivery.payment_status = 'pending'
+            
+            db.session.commit()
+            
+            flash('Delivery payment added successfully!', 'success')
+            return redirect(url_for('view_delivery', delivery_id=delivery_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding delivery payment: {str(e)}', 'error')
+            return redirect(url_for('add_delivery_payment', delivery_id=delivery_id))
+    
+    # GET request - show form
+    return render_template('add_delivery_payment.html', delivery=delivery)
 
 @app.errorhandler(500)
 def internal_error(error):
