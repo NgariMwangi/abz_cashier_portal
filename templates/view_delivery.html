@@ -138,12 +138,25 @@
                     <!-- Action Buttons -->
                     <div class="row mt-4">
                         <div class="col-md-12">
-                            <div class="btn-group" role="group">
+                            <div class="d-flex gap-2 flex-wrap">
                                 {% if delivery.delivery_status in ['pending', 'in_transit'] %}
                                 <a href="{{ url_for('edit_delivery', delivery_id=delivery.id) }}" class="btn btn-outline-secondary">
                                     <i class="fas fa-edit me-2"></i>Edit Delivery
                                 </a>
                                 {% endif %}
+                                
+                                <div class="btn-group" role="group">
+                                    <a href="{{ url_for('delivery_note_preview', delivery_id=delivery.id) }}" class="btn btn-outline-info">
+                                        <i class="fas fa-eye me-2"></i>Preview Delivery Note
+                                    </a>
+                                    <a href="{{ url_for('generate_delivery_note', delivery_id=delivery.id, action='view') }}" class="btn btn-outline-info" target="_blank">
+                                        <i class="fas fa-file-pdf me-2"></i>PDF
+                                    </a>
+                                    <a href="{{ url_for('generate_delivery_note', delivery_id=delivery.id, action='download') }}" class="btn btn-outline-success">
+                                        <i class="fas fa-download me-2"></i>Download
+                                    </a>
+                                </div>
+                                
                                 <a href="{{ url_for('add_delivery_payment', delivery_id=delivery.id) }}" class="btn btn-outline-success">
                                     <i class="fas fa-plus me-2"></i>Add Payment
                                 </a>
