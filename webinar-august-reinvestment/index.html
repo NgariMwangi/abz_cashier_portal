@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Don’t let August cash leave your portfolio</title>
+  <style>
+    :root {
+      --navy: #0a1628;
+      --navy-2: #122b4a;
+      --gold: #d4a017;
+      --cream: #f4efe4;
+      --white: #ffffff;
+      --muted: #8a96a8;
+      --teal: #1a7a6d;
+      --coral: #c45c4a;
+      --slate: #3d4f66;
+      --line: #e3dccf;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #070e18; color: var(--navy); font-family: "Segoe UI", Calibri, "Helvetica Neue", Arial, sans-serif; }
+    .deck { height: 100%; overflow: hidden; }
+    .slide {
+      display: none;
+      height: 100%;
+      padding: 56px 72px 64px;
+      position: relative;
+    }
+    .slide.on { display: flex; flex-direction: column; }
+    .slide.dark { background: var(--navy); color: var(--cream); }
+    .slide.light { background: var(--cream); }
+    .kicker { font-size: 13px; letter-spacing: 0.16em; font-weight: 700; color: var(--gold); text-transform: uppercase; margin-bottom: 14px; }
+    .gold-rule { width: 44px; height: 5px; background: var(--gold); margin-bottom: 18px; }
+    h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 700; line-height: 1.12; }
+    h2 { font-family: Georgia, "Times New Roman", serif; font-size: 38px; line-height: 1.15; color: var(--navy); margin-bottom: 10px; }
+    .sub { font-size: 20px; color: var(--slate); line-height: 1.45; max-width: 980px; }
+    .dark .sub { color: #d7d0c3; }
+    .footer {
+      position: absolute; left: 72px; right: 72px; bottom: 22px;
+      display: flex; justify-content: space-between; font-size: 12px; color: var(--muted);
+    }
+    .grid { display: grid; gap: 18px; margin-top: 28px; }
+    .g2 { grid-template-columns: 1fr 1fr; }
+    .g3 { grid-template-columns: 1fr 1fr 1fr; }
+    .g4 { grid-template-columns: 1fr 1fr; }
+    .card {
+      background: var(--white);
+      border-radius: 14px;
+      padding: 22px 24px;
+      box-shadow: 0 8px 24px rgba(10, 22, 40, 0.06);
+    }
+    .card h3 { font-size: 18px; margin-bottom: 8px; color: var(--navy); }
+    .card p, .card li { font-size: 15px; color: var(--slate); line-height: 1.45; }
+    .stat { font-family: Georgia, serif; font-size: 34px; color: var(--navy); margin-bottom: 8px; }
+    .teal { color: var(--teal); }
+    .gold { color: var(--gold); }
+    table { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 15px; }
+    th { background: var(--navy); color: white; text-align: left; padding: 12px 14px; }
+    td { padding: 14px; background: var(--white); border-bottom: 1px solid var(--line); vertical-align: top; }
+    tr:nth-child(even) td { background: #eadfd0; }
+    .agenda-item { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: start; }
+    .num { font-size: 22px; font-weight: 800; color: var(--gold); }
+    ul.clean { list-style: none; }
+    ul.clean li { padding: 8px 0 8px 18px; position: relative; color: var(--navy); font-size: 16px; line-height: 1.4; }
+    ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--gold); }
+    .bar-row { display: flex; align-items: flex-end; gap: 28px; height: 280px; margin: 20px 0 8px; padding: 0 20px; }
+    .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
+    .bar {
+      width: 100%; max-width: 120px; border-radius: 8px 8px 0 0;
+      display: flex; align-items: flex-start; justify-content: center;
+      color: white; font-weight: 700; padding-top: 10px; font-size: 13px;
+    }
+    .bar-label { margin-top: 10px; text-align: center; font-size: 14px; color: var(--slate); }
+    svg.chart { width: 100%; height: 360px; background: var(--white); border-radius: 14px; margin-top: 12px; }
+    .help { position: fixed; right: 18px; top: 18px; color: var(--muted); font-size: 12px; z-index: 5; }
+    .progress { position: fixed; left: 0; bottom: 0; height: 4px; background: var(--gold); z-index: 6; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 22px; flex: 1; }
+    .col { background: var(--white); border-radius: 14px; padding: 26px; }
+    .col.mmf { border-top: 6px solid var(--teal); }
+    .col.fif { border-top: 6px solid var(--gold); }
+    .title-xl { font-size: 58px; max-width: 1100px; }
+    .muted { color: var(--muted); font-size: 14px; }
+    code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="help">← → to move · F for fullscreen</div>
+  <div class="progress" id="progress"></div>
+  <div class="deck" id="deck">
+
+    <section class="slide dark on">
+      <div class="kicker">Investor webinar · Wednesday 19 August 2026</div>
+      <h1 class="title-xl">Don’t let August cash<br>leave your portfolio.</h1>
+      <p class="sub" style="margin-top:28px;max-width:860px;">Kenya’s domestic debt redemptions this month are almost double July’s. Put maturities and coupons back to work — in a Money Market Fund or a Fixed Income Fund.</p>
+      <p class="muted" style="margin-top:auto;padding-bottom:28px;">Illustrative briefing for investors · Not a solicitation for any named fund</p>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>What we will cover</h2>
+      <div class="grid g2" style="margin-top:28px;">
+        <div class="card agenda-item"><div class="num">01</div><div><h3>August’s cash calendar</h3><p>Which bonds are redeeming, which coupons land, and why the month is unusually large.</p></div></div>
+        <div class="card agenda-item"><div class="num">02</div><div><h3>The cost of spending it</h3><p>A compounding picture of KES 1,000,000 spent vs reinvested over 5, 10 and 15 years.</p></div></div>
+        <div class="card agenda-item"><div class="num">03</div><div><h3>Two natural homes for the cash</h3><p>When a Money Market Fund is the right parking bay — and when a Fixed Income Fund should do the work.</p></div></div>
+        <div class="card agenda-item"><div class="num">04</div><div><h3>What to do this week</h3><p>A simple decision path before proceeds hit the linked bank account and disappear into spending.</p></div></div>
+      </div>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>2 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>August is a cash-flow month, not a quiet month</h2>
+      <div class="grid g3">
+        <div class="card"><div class="stat">KES 294bn</div><h3 class="teal">Domestic debt maturing in August</h3><p>Almost double July’s KES 152bn of T-bill and T-bond redemptions. (SIB, citing CBK)</p></div>
+        <div class="card"><div class="stat">17 August</div><h3 class="teal">Two government papers redeem</h3><p>FXD1/2016/010 matures in full. IFB1/2020/011 sits on CBK’s 17 Aug redemption calendar (scheduled amortisation of the 2020 infrastructure bond).</p></div>
+        <div class="card"><div class="stat">All month</div><h3 class="teal">Coupons and T-bills land</h3><p>February/August coupon bonds pay this month. Weekly T-bills redeem on 17, 24 and 31 August.</p></div>
+      </div>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>3 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>Bonds on the August redemption calendar</h2>
+      <p class="sub">Source: CBK redemption calendar and original prospectuses. Outstanding amounts vary after switches and reopenings.</p>
+      <table>
+        <thead><tr><th>Issue</th><th>Type</th><th>What happens</th><th>Coupon</th><th>Tax</th></tr></thead>
+        <tbody>
+          <tr><td><strong>FXD1/2016/010</strong></td><td>10-year Treasury bond</td><td>Matures in full — 17 Aug 2026</td><td>15.039%</td><td>10% WHT</td></tr>
+          <tr><td><strong>IFB1/2020/011</strong></td><td>11-year Infrastructure bond</td><td>On CBK’s 17 Aug redemption list (typical year-6 50% amortisation; original final maturity 2031)</td><td>10.90%</td><td>Tax-exempt</td></tr>
+          <tr><td><strong>Weekly T-bills</strong></td><td>91 / 182 / 364-day</td><td>Redemptions 17, 24 and 31 August 2026</td><td>Discount (~8.8–9.0%)</td><td>15% WHT</td></tr>
+          <tr><td><strong>FXD1/2012/015 + 3 T-bills</strong></td><td>Switch offer</td><td>Optional switch into FXD4/2019/010 — bids by 24 Aug 10:00, settles 26 Aug</td><td>11.00% source / 12.28% destination</td><td>10% WHT</td></tr>
+        </tbody>
+      </table>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>4 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>Coupons landing — even if your bond is not maturing</h2>
+      <p class="sub">Kenya Treasury bonds pay interest twice a year. Papers on a February/August cycle credit coupons this month. That cash is easy to treat as “extra” and spend. It is still capital that can compound.</p>
+      <div class="grid" style="grid-template-columns: 1fr; margin-top: 22px;">
+        <div class="card" style="display:grid;grid-template-columns:220px 1fr;gap:12px;align-items:center;">
+          <div class="gold" style="font-weight:800;font-size:18px;">10 August</div>
+          <div><h3>FXD1/2021/020</h3><p>13.444% coupon · 10% WHT · matures July 2041</p></div>
+        </div>
+        <div class="card" style="display:grid;grid-template-columns:220px 1fr;gap:12px;align-items:center;">
+          <div class="gold" style="font-weight:800;font-size:18px;">17 August</div>
+          <div><h3>FXD1/2016/010</h3><p>Final coupon plus 100% of principal · 15.039%</p></div>
+        </div>
+        <div class="card" style="display:grid;grid-template-columns:220px 1fr;gap:12px;align-items:center;">
+          <div class="gold" style="font-weight:800;font-size:18px;">Feb / Aug cycle</div>
+          <div><h3>Several FXD and IFB issues</h3><p>Holders receive semi-annual interest into DhowCSD, then the linked bank. Check your portal — do not wait for an SMS.</p></div>
+        </div>
+      </div>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>5 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>What usually happens to the money</h2>
+      <div class="grid g2">
+        <div class="card"><div class="num">1</div><h3>Credit</h3><p>CBK pays principal and coupons into DhowCSD. Cash then becomes available in the linked bank account.</p></div>
+        <div class="card"><div class="num">2</div><h3>The quiet leak</h3><p>Once it sits in a transactional account it looks like income. School fees, a trip, a new car — all reasonable, all terminal for compounding.</p></div>
+        <div class="card"><div class="num">3</div><h3>Inflation</h3><p>At 6.5% inflation (July 2026), cash that earns about 0–2% loses purchasing power every month it waits.</p></div>
+        <div class="card"><div class="num">4</div><h3>The better default</h3><p>Treat every redemption as a reinvestment event first. Spend only what you planned to spend — from a budget, not from a maturity.</p></div>
+      </div>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>6 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>KES 1,000,000 received this August — four paths</h2>
+      <p class="sub">Illustrative only. 9% and 12% are round numbers near recent MMF / fixed-income industry averages, not a promise.</p>
+      <svg class="chart" viewBox="0 0 1100 360" role="img" aria-label="Compounding chart">
+        <rect x="0" y="0" width="1100" height="360" fill="#ffffff" rx="12"/>
+        <g font-family="Segoe UI, Arial" font-size="12" fill="#3d4f66">
+          <text x="56" y="28">KES millions</text>
+          <!-- y grid 0-6 -->
+          <g stroke="#e3dccf" stroke-width="1">
+            <line x1="70" y1="40" x2="1040" y2="40"/><text x="28" y="44">6.0</text>
+            <line x1="70" y1="85" x2="1040" y2="85"/><text x="28" y="89">5.0</text>
+            <line x1="70" y1="130" x2="1040" y2="130"/><text x="28" y="134">4.0</text>
+            <line x1="70" y1="175" x2="1040" y2="175"/><text x="28" y="179">3.0</text>
+            <line x1="70" y1="220" x2="1040" y2="220"/><text x="28" y="224">2.0</text>
+            <line x1="70" y1="265" x2="1040" y2="265"/><text x="28" y="269">1.0</text>
+            <line x1="70" y1="310" x2="1040" y2="310"/><text x="36" y="314">0</text>
+          </g>
+          <text x="70" y="332">0</text>
+          <text x="199" y="332">2</text>
+          <text x="328" y="332">4</text>
+          <text x="457" y="332">6</text>
+          <text x="586" y="332">8</text>
+          <text x="715" y="332">10</text>
+          <text x="844" y="332">12</text>
+          <text x="973" y="332">14 yrs</text>
+        </g>
+        <!-- Spent: 1m at y0 then 0. Map: y = 310 - value*45, x = 70 + year*64.67 -->
+        <polyline fill="none" stroke="#c45c4a" stroke-width="3" stroke-dasharray="8 6"
+          points="70,265 135,310 199,310 264,310 328,310 393,310 457,310 522,310 586,310 651,310 715,310 780,310 844,310 909,310 973,310 1038,310"/>
+        <!-- 2%: 1.02^y -->
+        <polyline id="bank" fill="none" stroke="#8a96a8" stroke-width="3" points=""/>
+        <polyline id="mmf" fill="none" stroke="#1a7a6d" stroke-width="3.5" points=""/>
+        <polyline id="fif" fill="none" stroke="#d4a017" stroke-width="3.5" points=""/>
+        <g font-size="13" font-family="Segoe UI, Arial">
+          <rect x="80" y="48" width="12" height="4" fill="#c45c4a"/><text x="98" y="54" fill="#0a1628">Spent in year 1</text>
+          <rect x="230" y="48" width="12" height="4" fill="#8a96a8"/><text x="248" y="54" fill="#0a1628">Left in a 2% account</text>
+          <rect x="430" y="48" width="12" height="4" fill="#1a7a6d"/><text x="448" y="54" fill="#0a1628">Money Market Fund @ 9%</text>
+          <rect x="680" y="48" width="12" height="4" fill="#d4a017"/><text x="698" y="54" fill="#0a1628">Fixed Income Fund @ 12%</text>
+        </g>
+      </svg>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>7 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>Same shilling. Three futures. One empty pocket.</h2>
+      <p class="sub">Starting value KES 1,000,000. Figures are future values, not inflation-adjusted, and not a forecast.</p>
+      <div class="bar-row">
+        <div class="bar-col"><div class="bar" style="height:8px;background:#c45c4a;">0</div><div class="bar-label"><strong>Spent</strong><br>KES 0</div></div>
+        <div class="bar-col"><div class="bar" style="height:92px;background:#8a96a8;">1.22m</div><div class="bar-label"><strong>2% account</strong><br>10 years</div></div>
+        <div class="bar-col"><div class="bar" style="height:178px;background:#1a7a6d;">2.37m</div><div class="bar-label"><strong>MMF 9%</strong><br>10 years</div></div>
+        <div class="bar-col"><div class="bar" style="height:234px;background:#d4a017;color:#0a1628;">3.11m</div><div class="bar-label"><strong>FIF 12%</strong><br>10 years</div></div>
+      </div>
+      <table>
+        <thead><tr><th>Horizon</th><th>2% account</th><th>MMF 9%</th><th>FIF 12%</th><th>What spending gives up (vs FIF)</th></tr></thead>
+        <tbody>
+          <tr><td>5 years</td><td>KES 1.10m</td><td>KES 1.54m</td><td>KES 1.76m</td><td>KES 1.76m</td></tr>
+          <tr><td>10 years</td><td>KES 1.22m</td><td>KES 2.37m</td><td>KES 3.11m</td><td>KES 3.11m</td></tr>
+          <tr><td>15 years</td><td>KES 1.35m</td><td>KES 3.64m</td><td>KES 5.47m</td><td>KES 5.47m</td></tr>
+        </tbody>
+      </table>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>8 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>Why reinvest instead of spend</h2>
+      <div class="grid g3">
+        <div class="card"><h3>Maturity is not a bonus</h3><p>The principal was already yours. Spending it shrinks the machine that was paying you 10–15% coupons.</p></div>
+        <div class="card"><h3>Coupons are easy to hide</h3><p>A few hundred thousand shillings of interest does not feel like a decision. Repeated twice a year, it is the whole return.</p></div>
+        <div class="card"><h3>Cash is taxed by inflation</h3><p>6.5% inflation versus a 2% account is a real loss. A ~9% MMF still compounds in real terms.</p></div>
+        <div class="card"><h3>You cannot recapture skipped years</h3><p>The steep part of the compounding curve is later. Ten idle years cannot be “caught up” with one good year.</p></div>
+        <div class="card"><h3>Liquidity is already built in</h3><p>You do not need to spend the bond to stay liquid. An MMF is typically T+2 to T+4, often from KES 1,000.</p></div>
+        <div class="card"><h3>Replace the expired contract</h3><p>FXD1/2016/010 paid 15.039%. That contract ends on 17 August. A fund puts you back into a book of bills and bonds the next day.</p></div>
+      </div>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>9 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>Two CMA-licensed homes for the proceeds</h2>
+      <div class="split">
+        <div class="col mmf">
+          <h3 class="teal" style="font-family:Georgia,serif;font-size:28px;margin-bottom:8px;">Money Market Fund</h3>
+          <p style="color:var(--slate);margin-bottom:16px;">Park it. Stay liquid. Beat the current account.</p>
+          <ul class="clean">
+            <li>Holds T-bills, short bonds, call and fixed deposits</li>
+            <li>Typical industry yield ~9% gross / ~7.6% net (H1 2026 average)</li>
+            <li>Interest calculated daily, paid after 15% WHT</li>
+            <li>Access usually within 2–4 working days</li>
+            <li>Best when the money may be needed inside 12 months</li>
+            <li>KES 442bn of industry MMF AUM as of March 2026</li>
+          </ul>
+        </div>
+        <div class="col fif">
+          <h3 class="gold" style="font-family:Georgia,serif;font-size:28px;margin-bottom:8px;">Fixed Income Fund</h3>
+          <p style="color:var(--slate);margin-bottom:16px;">Put duration back to work. Replace the expired bond.</p>
+          <ul class="clean">
+            <li>Holds a ladder of Treasury and quality corporate bonds</li>
+            <li>Category average ~11.9% gross / ~10.1% net (June 2026)</li>
+            <li>More yield than an MMF — and more price movement</li>
+            <li>Sensible holding period: 12 months and beyond</li>
+            <li>~250 bps extra versus the MMF average in mid-2026</li>
+            <li>A closer substitute for the bond that just matured</li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>10 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>The case for the Money Market Fund</h2>
+      <p class="sub">Use it when the August cash is a bridge — school fees in January, a property completion, or “I have not decided yet”.</p>
+      <div class="grid g3">
+        <div class="card"><h3 class="teal">Beats idle cash immediately</h3><p>91-day T-bills are ~8.8%. A decent MMF often matches or beats that, with daily compounding and no auction paperwork.</p></div>
+        <div class="card"><h3 class="teal">No need to pick a bond</h3><p>You do not have to bid the 24 August switch or the next IFB. The manager already holds a book of bills and short paper.</p></div>
+        <div class="card"><h3 class="teal">You stay in control</h3><p>Units can usually be withdrawn in a few days. The money is working, but it is not locked.</p></div>
+        <div class="card"><h3 class="teal">A disciplined default</h3><p>Standing instruction: every DhowCSD credit → MMF. Spending then requires a conscious withdrawal, not an accident.</p></div>
+        <div class="card"><h3 class="teal">Professional cash management</h3><p>Custodian + trustee + CMA licence. This is not a Sacco promise or a WhatsApp “investment”.</p></div>
+        <div class="card"><h3 class="teal">USD option exists</h3><p>If the proceeds are dollar-linked, dollar MMFs returned about 4.3% net in H1 2026.</p></div>
+      </div>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>11 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>The case for the Fixed Income Fund</h2>
+      <p class="sub">Use it when the August cash was long-term capital — the 10-year bond that just matured should not become a 91-day afterthought.</p>
+      <div class="grid g3">
+        <div class="card"><h3 class="gold">Replace the expired coupon engine</h3><p>FXD1/2016/010 paid 15%. New 10-year FXD paper is around 12.8%. A bond fund keeps you in that market without timing one auction.</p></div>
+        <div class="card"><h3 class="gold">A ladder, not a single name</h3><p>One matured issue becomes a diversified book — several tenors, reopenings, and (in some funds) quality corporates.</p></div>
+        <div class="card"><h3 class="gold">The extra 2–3 points compound</h3><p>On KES 1m, 250 bps extra versus an MMF is about KES 25,000 a year at the start — and more as the base grows.</p></div>
+        <div class="card"><h3 class="gold">Yields are still useful</h3><p>CBR is 8.75%. Long bonds still clear ~12–14%. Locking duration now is how you keep income if policy rates drift lower.</p></div>
+        <div class="card"><h3 class="gold">Tax-aware IFB exposure</h3><p>Infrastructure bonds pay coupons with no WHT. Funds that hold IFBs pass through some of that tax advantage.</p></div>
+        <div class="card"><h3 class="gold">Stay invested through the switch</h3><p>You do not have to decide by 24 August whether to switch FXD1/2012/015. The fund can hold duration for you.</p></div>
+      </div>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>12 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>How to choose — a 60-second test</h2>
+      <table>
+        <thead><tr><th>If this is true…</th><th>Then use</th></tr></thead>
+        <tbody>
+          <tr><td>I may need this money within 12 months (fees, construction drawdown, emergency reserve).</td><td><strong>Money Market Fund</strong></td></tr>
+          <tr><td>I have not decided yet, and I refuse to leave it in the current account over the weekend.</td><td><strong>Money Market Fund (default)</strong></td></tr>
+          <tr><td>This was a 5–10 year bond. I still want income, and I can leave it for a year or more.</td><td><strong>Fixed Income Fund</strong></td></tr>
+          <tr><td>I want both: spend nothing, keep 30–40% liquid, put the rest back into duration.</td><td><strong>Split: MMF + Fixed Income</strong></td></tr>
+          <tr><td>I am sitting on FXD1/2012/015 and the T-bills in the 26 August switch.</td><td><strong>Switch and/or Fixed Income Fund</strong></td></tr>
+          <tr><td>Dollar liabilities (school fees abroad, import invoice).</td><td><strong>USD Money Market sleeve</strong></td></tr>
+        </tbody>
+      </table>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>13 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>This week’s action list</h2>
+      <div class="grid" style="grid-template-columns: 1fr;">
+        <div class="card" style="display:grid;grid-template-columns:200px 1fr;"><strong class="gold">Mon–Tue</strong><p>Open DhowCSD. Note every August credit — maturity, amortisation, coupon, T-bill.</p></div>
+        <div class="card" style="display:grid;grid-template-columns:200px 1fr;"><strong class="gold">Before 17 Aug</strong><p>If FXD1/2016/010 or IFB1/2020/011 is paying you, decide MMF vs FIF before the money hits the bank.</p></div>
+        <div class="card" style="display:grid;grid-template-columns:200px 1fr;"><strong class="gold">By 24 Aug, 10:00</strong><p>Holders of FXD1/2012/015 and the three source T-bills: accept or ignore the switch into FXD4/2019/010.</p></div>
+        <div class="card" style="display:grid;grid-template-columns:200px 1fr;"><strong class="gold">Same day as credit</strong><p>Move the amount you will not spend in 90 days. A standing order into the fund beats willpower.</p></div>
+        <div class="card" style="display:grid;grid-template-columns:200px 1fr;"><strong class="gold">Split if unsure</strong><p>Example: 40% MMF (near cash) + 60% Fixed Income (replace the bond). Review in 90 days.</p></div>
+        <div class="card" style="display:grid;grid-template-columns:200px 1fr;"><strong class="gold">Don’t wait for an auction</strong><p>Funds subscribe for you. Cash that waits for a perfect bond often becomes a school-fees withdrawal.</p></div>
+      </div>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>14 / 16</span></div>
+    </section>
+
+    <section class="slide light">
+      <div class="gold-rule"></div>
+      <h2>If you remember only five things</h2>
+      <div class="grid" style="grid-template-columns:1fr;">
+        <div class="card agenda-item"><div class="num">01</div><p style="font-size:18px;color:var(--navy);">August 2026 is a redemption month — KES 294bn of domestic paper is rolling off.</p></div>
+        <div class="card agenda-item"><div class="num">02</div><p style="font-size:18px;color:var(--navy);">FXD1/2016/010 matures 17 August. Coupons on the February/August cycle land too.</p></div>
+        <div class="card agenda-item"><div class="num">03</div><p style="font-size:18px;color:var(--navy);">Spending the principal ends the compounding. A 2% account is a slow version of the same mistake.</p></div>
+        <div class="card agenda-item"><div class="num">04</div><p style="font-size:18px;color:var(--navy);">Default: Money Market Fund if the horizon is short. Fixed Income Fund if you are replacing a long bond.</p></div>
+        <div class="card agenda-item"><div class="num">05</div><p style="font-size:18px;color:var(--navy);">Move the money the day it arrives. The decision is this week, not “after the holidays”.</p></div>
+      </div>
+      <div class="footer"><span>August 2026 · Reinvesting Bond Maturities &amp; Coupons</span><span>15 / 16</span></div>
+    </section>
+
+    <section class="slide dark">
+      <div class="kicker">Questions · Next steps</div>
+      <h1 class="title-xl" style="font-size:48px;">We can open the fund<br>the same week the bond pays.</h1>
+      <p class="sub" style="margin-top:28px;">Bring your DhowCSD statement. We will map each August credit to either a Money Market Fund, a Fixed Income Fund, or a planned withdrawal.</p>
+      <p class="muted" style="margin-top:auto;padding-bottom:28px;max-width:980px;line-height:1.5;">Disclaimer: This briefing is educational. It is not a prospectus, not tax advice, and not a recommendation of any named unit trust. Yields cited are industry snapshots (CBK, CMA-licensed fund tables, SIB weekly) and will change. Past returns do not predict future returns. Invest only in CMA-licensed funds. Confirm fact sheets, fees, WHT and redemption timelines with the manager before you subscribe.</p>
+    </section>
+  </div>
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    const progress = document.getElementById('progress');
+    let i = 0;
+    function show(n) {
+      i = Math.max(0, Math.min(slides.length - 1, n));
+      slides.forEach((s, k) => s.classList.toggle('on', k === i));
+      progress.style.width = ((i + 1) / slides.length * 100) + '%';
+    }
+    document.addEventListener('keydown', (e) => {
+      if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); show(i + 1); }
+      if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); show(i - 1); }
+      if (e.key === 'Home') show(0);
+      if (e.key === 'End') show(slides.length - 1);
+      if (e.key === 'f' || e.key === 'F') document.documentElement.requestFullscreen?.();
+    });
+    document.addEventListener('click', (e) => {
+      if (e.clientX > window.innerWidth * 0.55) show(i + 1);
+      else show(i - 1);
+    });
+    function pts(rate) {
+      const out = [];
+      for (let y = 0; y <= 15; y++) {
+        const val = Math.pow(1 + rate, y);
+        const x = 70 + y * 64.67;
+        const yp = 310 - val * 45;
+        out.push(x.toFixed(1) + ',' + yp.toFixed(1));
+      }
+      return out.join(' ');
+    }
+    document.getElementById('bank').setAttribute('points', pts(0.02));
+    document.getElementById('mmf').setAttribute('points', pts(0.09));
+    document.getElementById('fif').setAttribute('points', pts(0.12));
+    show(0);
+  </script>
+</body>
+</html>
